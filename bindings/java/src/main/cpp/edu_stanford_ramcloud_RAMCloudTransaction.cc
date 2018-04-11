@@ -211,9 +211,17 @@ JNICALL Java_edu_stanford_ramcloud_RAMCloudTransaction_cppRead(
     void* key = buffer.getVoidPointer(keyLength);
     Buffer value;
     buffer.rewind();
+
+    bool exists;
     try {
-        transaction->read(tableId, key, keyLength, &value);
+        transaction->read(tableId, key, keyLength, &value, &exists);
     } EXCEPTION_CATCHER(buffer);
+
+    if(exists == true)
+        buffer.write<uint32_t>(1);
+    else
+        buffer.write<uint32_t>(0);
+
     buffer.write(value.size());
     value.copy(0, value.size(), buffer.getVoidPointer());
 }
