@@ -25,6 +25,8 @@ import org.apache.log4j.Logger;
 
 /**
  * This class provides the Java bindings for the RAMCloud C++ Transaction class.
+ *
+ * Note: This class is not thread safe (neither is the C++ implementation)
  */
 public class RAMCloudTransaction {
     static {
