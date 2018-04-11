@@ -32,6 +32,7 @@ import java.nio.*;
  * http://www.ibm.com/developerworks/java/tutorials/j-jni/section4.html
  * http://developer.android.com/training/articles/perf-jni.html
  *
+ * Note: This class is not thread safe (neither is the C++ implementation)
  */
 public class RAMCloud {
     static {
