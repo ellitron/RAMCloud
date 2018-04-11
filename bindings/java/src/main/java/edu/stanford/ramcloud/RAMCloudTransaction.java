@@ -24,21 +24,6 @@ import java.nio.ByteOrder;
 import org.apache.log4j.Logger;
 
 /**
- * This class provides Java bindings for RAMCloud. Right now it is a rather
- * simple subset of what RamCloud.h defines.
- *
- * Running ``javah'' on this file will generate a C header file with the
- * appropriate JNI function definitions. The glue interfacing to the C++
- * RAMCloud library can be found in RAMCloud.cc.
- *
- * For JNI information, the IBM tutorials and Android developer docs are much
- * better than Sun's at giving an overall intro:
- * http://www.ibm.com/developerworks/java/tutorials/j-jni/section4.html
- * http://developer.android.com/training/articles/perf-jni.html
- *
- */
-
-/**
  * This class provides the Java bindings for the RAMCloud C++ Transaction class.
  */
 public class RAMCloudTransaction {
@@ -80,7 +65,7 @@ public class RAMCloudTransaction {
     
     /**
      * Constructor for a transaction. Also constructs the underlying C++ 
-     * Transaction object.
+     * Transaction object, which we keep a pointer to for future JNI calls.
      * 
      * @param ramcloud 
      *            RAMCloud cluster on which to perform the transaction.
@@ -100,8 +85,8 @@ public class RAMCloudTransaction {
 
     /**
      * Accessor method for getting a pointer to the underlying C++ RAMCloud
-     * Transaction object. Useful for TransactionReadOp objects which reference
-     * a RAMCloud Transaction object in their C++ implementation.
+     * Transaction object. Used by TransactionReadOp objects which reference a
+     * RAMCloud Transaction object in their C++ implementation.
      * 
      * @return Address of this RAMCloud Transaction object in memory.
      */
@@ -111,7 +96,8 @@ public class RAMCloudTransaction {
 
     /**
      * Accessor method for byteBuffer. Used by the TransactionReadOp class to
-     * reuse RAMCloud's buffer for transferring a stack of arguments to C++.
+     * reuse RAMCloud's buffer for communicating arguments and return values
+     * to/from C++.
      * 
      * @return ByteBuffer of this object.
      * 
