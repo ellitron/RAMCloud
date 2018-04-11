@@ -74,6 +74,17 @@ public class RAMCloud {
     private long ramcloudClusterHandle;
 
     /**
+     * Accessor method for getting a pointer to the underlying C++ RAMCloud
+     * object. Useful for Transaction objects which reference a RAMCloud object
+     * in their C++ implementation.
+     * 
+     * @return Address of this RAMCloud object in memory.
+     */
+    public long getRamCloudClusterHandle() {
+        return ramcloudClusterHandle;
+    }
+    
+    /**
      * A native ByteBuffer that acts as a shared memory region between Java and
      * C++. This enables fast passing of arguments and return values for native
      * calls.
@@ -85,6 +96,34 @@ public class RAMCloud {
      */
     private long byteBufferPointer;
 
+    /**
+     * Accessor method for byteBuffer. Used by the Transaction class to reuse 
+     * RAMCloud's buffer for transferring a stack of arguments to C++.
+     * 
+     * @return ByteBuffer of this RAMCloud object.
+     * 
+     * @note A more elegant approach might be to create a "context" object that 
+     * contains global variables for a single RAMCloud object and any objects 
+     * that reference it. 
+     */
+    public ByteBuffer getByteBuffer() {
+        return byteBuffer;
+    }
+    
+    /**
+     * Accessor method for byteBufferPointer. Used by the Transaction class to 
+     * avoid the work of figuring out the byteBuffer's address in memory.
+     * 
+     * @return Pointer referring to the byteBuffer in memory.
+     * 
+     * @note A more elegant approach might be to create a "context" object that 
+     * contains global variables for a single RAMCloud object and any objects 
+     * that reference it. 
+     */
+    public long getByteBufferPointer() {
+        return byteBufferPointer;
+    }
+    
     /**
      * Reuse existing MultiOpHandler objects to slightly increase performance.
      */
@@ -371,6 +410,22 @@ public class RAMCloud {
         return version;
     }
 
+    public long incrementInt64(long tableId, byte[] key, long incrementValue, RejectRules rules) {
+        byteBuffer.rewind();
+        byteBuffer.putLong(ramcloudClusterHandle)
+                .putLong(tableId)
+                .putInt(key.length)
+                .put(key)
+                .putLong(incrementValue)
+                .put(getRejectRulesBytes(rules));
+        cppIncrementInt64(byteBufferPointer);
+        byteBuffer.rewind();
+        checkStatus(byteBuffer.getInt());
+        long value = byteBuffer.getLong();
+        return value;
+        
+    }
+    
     /**
      * Create a new table, if it doesn't already exist.
      *
@@ -538,6 +593,8 @@ public class RAMCloud {
     private static native void cppRemove(long byteBufferPointer);
 
     private static native void cppWrite(long byteBufferPointer);
+    
+    private static native void cppIncrementInt64(long byteBufferPointer);
 
     private static native void cppMultiRemove(long ramcloudClusterHandle,
                                               long[] tableIds,
