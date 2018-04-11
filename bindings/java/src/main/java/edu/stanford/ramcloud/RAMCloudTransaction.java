@@ -249,7 +249,8 @@ public class RAMCloudTransaction {
      *            The caller must ensure that the storage for this key is
      *            unchanged through the life of the RPC.
      * @return A RAMCloudObject holding the key and value of the read object 
-     *          (no version information, defaults to 0)
+     *          (no version information, defaults to 0), or null if the object
+     *          does not exist.
      */
     public RAMCloudObject read(long tableId, byte[] key) {
         byteBuffer.rewind();
