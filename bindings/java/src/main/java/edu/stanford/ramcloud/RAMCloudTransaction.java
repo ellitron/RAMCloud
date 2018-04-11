@@ -27,14 +27,26 @@ import org.apache.log4j.Logger;
  * This class provides the Java bindings for the RAMCloud C++ Transaction class.
  *
  * Note: This class is not thread safe (neither is the C++ implementation)
+ *
+ * This class provides Java bindings for RAMCloud. Right now it is a rather
+ * simple subset of what RamCloud.h defines.
+ *
+ * Running ``javah'' on this file will generate a C header file with the
+ * appropriate JNI function definitions. The glue interfacing to the C++
+ * RAMCloud library can be found in RAMCloud.cc.
+ *
+ * For JNI information, the IBM tutorials and Android developer docs are much
+ * better than Sun's at giving an overall intro:
+ * http://www.ibm.com/developerworks/java/tutorials/j-jni/section4.html
+ * http://developer.android.com/training/articles/perf-jni.html
+ *
  */
 public class RAMCloudTransaction {
     static {
         Util.loadLibrary("ramcloud_java");
     } 
 
-    private static final Logger logger = 
-        Logger.getLogger(RAMCloudTransaction.class);
+    private static final Logger logger = Logger.getLogger(RAMCloudTransaction.class);
 
     /**
      * Target cluster of this transaction.
@@ -69,8 +81,7 @@ public class RAMCloudTransaction {
      * Constructor for a transaction. Also constructs the underlying C++ 
      * Transaction object, which we keep a pointer to for future JNI calls.
      * 
-     * @param ramcloud 
-     *            RAMCloud cluster on which to perform the transaction.
+     * @param ramcloud RAMCloud cluster on which to perform the transaction.
      */
     public RAMCloudTransaction(RAMCloud ramcloud) {
         this.ramcloud = ramcloud;
