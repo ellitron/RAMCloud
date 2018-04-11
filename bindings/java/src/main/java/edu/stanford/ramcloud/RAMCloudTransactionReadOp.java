@@ -153,7 +153,8 @@ public class RAMCloudTransactionReadOp {
     /**
      * Blocking call to return the RAMCloud object read by this ReadOp.
      *
-     * @return RAMCloud object returned by this ReadOp.
+     * @return RAMCloud object returned by this ReadOp, or null if the object
+     *          does not exist.
      */
     public RAMCloudObject getValue() {
         byteBuffer.rewind();
