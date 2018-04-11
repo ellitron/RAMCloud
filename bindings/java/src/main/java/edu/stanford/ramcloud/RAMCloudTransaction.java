@@ -46,7 +46,8 @@ public class RAMCloudTransaction {
         Util.loadLibrary("ramcloud_java");
     } 
 
-    private static final Logger logger = Logger.getLogger(RAMCloudTransaction.class);
+    private static final Logger logger = 
+        Logger.getLogger(RAMCloudTransaction.class);
 
     /**
      * Target cluster of this transaction.
@@ -259,15 +260,7 @@ public class RAMCloudTransaction {
                 .putInt(key.length)
                 .put(key);
         
-        long startTimeNs = 0;
-        if (logger.isDebugEnabled()) {
-            startTimeNs = System.nanoTime();
-        }
         cppRead(byteBufferPointer);
-        if (logger.isDebugEnabled()) {
-            long endTimeNs = System.nanoTime();
-            logger.debug("read(), took " + (endTimeNs - startTimeNs)/1000l + "us");
-        }
 
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
@@ -361,15 +354,7 @@ public class RAMCloudTransaction {
                 .putInt(value.length)
                 .put(value);
 
-        long startTimeNs = 0;
-        if (logger.isDebugEnabled()) {
-            startTimeNs = System.nanoTime();
-        }
         cppWrite(byteBufferPointer);
-        if (logger.isDebugEnabled()) {
-            long endTimeNs = System.nanoTime();
-            logger.debug("write(), took " + (endTimeNs - startTimeNs)/1000l + "us");
-        }
 
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
