@@ -43,9 +43,9 @@ public class RAMCloudTransactionReadOp {
     private ByteBuffer byteBuffer;
 
     /**
-     * Pointer to the memory location that byteBuffer wraps.
+     * C++ pointer to the shared memory location that byteBuffer wraps.
      */
-    private long byteBufferPointer;
+    private long cppByteBufferPointer;
     
     /**
      * Pointer to the underlying C++ Transaction::ReadOp object associated with
@@ -77,7 +77,7 @@ public class RAMCloudTransactionReadOp {
         long tableId, byte[] key, boolean batch) {
         this.key = key;
         byteBuffer = ramcloudTx.getByteBuffer();
-        byteBufferPointer = ramcloudTx.getByteBufferPointer();
+        cppByteBufferPointer = ramcloudTx.getByteBufferPointer();
 
         long cppTransactionObjectPointer = 
             ramcloudTx.getCppTransactionObjectPointer();
@@ -96,7 +96,7 @@ public class RAMCloudTransactionReadOp {
             .put(key)
             .putInt(batchInt);
 
-        cppConstructor(byteBufferPointer);
+        cppConstructor(cppByteBufferPointer);
 
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
@@ -121,7 +121,7 @@ public class RAMCloudTransactionReadOp {
             byteBuffer.putLong(cppTransactionReadOpObjectPointer);
             byteBuffer.putLong(cppReturnBufferObjectPointer);
 
-            cppDeconstructor(byteBufferPointer);
+            cppDeconstructor(cppByteBufferPointer);
 
             byteBuffer.rewind();
 
@@ -143,7 +143,7 @@ public class RAMCloudTransactionReadOp {
         byteBuffer.rewind();
         byteBuffer.putLong(cppTransactionReadOpObjectPointer);
 
-        cppIsReady(byteBufferPointer);
+        cppIsReady(cppByteBufferPointer);
         
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
@@ -161,7 +161,7 @@ public class RAMCloudTransactionReadOp {
         byteBuffer.putLong(cppTransactionReadOpObjectPointer);
         byteBuffer.putLong(cppReturnBufferObjectPointer);
         
-        cppWait(byteBufferPointer);
+        cppWait(cppByteBufferPointer);
 
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
@@ -180,8 +180,8 @@ public class RAMCloudTransactionReadOp {
     }
     
     // Documentation for native methods located in C++ files
-    protected native void cppConstructor(long byteBufferPointer);
-    protected native void cppDeconstructor(long byteBufferPointer);
-    protected native void cppIsReady(long byteBufferPointer);
-    protected native void cppWait(long byteBufferPointer);
+    protected native void cppConstructor(long cppByteBufferPointer);
+    protected native void cppDeconstructor(long cppByteBufferPointer);
+    protected native void cppIsReady(long cppByteBufferPointer);
+    protected native void cppWait(long cppByteBufferPointer);
 }
