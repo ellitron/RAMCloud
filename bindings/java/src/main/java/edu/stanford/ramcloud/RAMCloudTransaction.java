@@ -46,7 +46,8 @@ public class RAMCloudTransaction {
         Util.loadLibrary("ramcloud_java");
     } 
 
-    private static final Logger logger = Logger.getLogger(RAMCloudTransaction.class);
+    private static final Logger logger = 
+        Logger.getLogger(RAMCloudTransaction.class);
 
     /**
      * Target cluster of this transaction.
