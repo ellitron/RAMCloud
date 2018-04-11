@@ -269,15 +269,18 @@ public class RAMCloudTransaction {
         }
 
         byteBuffer.rewind();
-        int statusCode = byteBuffer.getInt();
-        Status status = Status.statuses[statusCode];
-//        if (status == Status.STATUS_OBJECT_DOESNT_EXIST) {
-//            return null;
-//        }
-        ClientException.checkStatus(statusCode);
+        ClientException.checkStatus(byteBuffer.getInt());
+
+        boolean exists = (byteBuffer.getInt() == 1);
+
+        if (!exists) {
+          return null;
+        }
+
         int valueLength = byteBuffer.getInt();
         byte[] value = new byte[valueLength];
         byteBuffer.get(value);
+
         return new RAMCloudObject(key, value, 0);
     }
     
