@@ -68,9 +68,9 @@ public class RAMCloudTransaction {
     private ByteBuffer byteBuffer;
 
     /**
-     * Pointer to the memory location that byteBuffer wraps.
+     * C++ pointer to the shared memory location that byteBuffer wraps.
      */
-    private long byteBufferPointer;
+    private long cppByteBufferPointer;
     
     /**
      * Pointer to the underlying C++ Transaction object associated with this
@@ -89,10 +89,10 @@ public class RAMCloudTransaction {
         this.ramcloud = ramcloud;
         cppRamcloudObjectPointer = ramcloud.getRamCloudClusterHandle();
         byteBuffer = ramcloud.getByteBuffer();
-        byteBufferPointer = ramcloud.getByteBufferPointer();
+        cppByteBufferPointer = ramcloud.getByteBufferPointer();
         byteBuffer.rewind();
         byteBuffer.putLong(cppRamcloudObjectPointer);
-        cppConstructor(byteBufferPointer);
+        cppConstructor(cppByteBufferPointer);
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
         cppTransactionObjectPointer = byteBuffer.getLong();
@@ -124,7 +124,7 @@ public class RAMCloudTransaction {
     }
     
     /**
-     * Accessor method for byteBufferPointer. Used by the TransactionReadOp
+     * Accessor method for cppByteBufferPointer. Used by the TransactionReadOp
      * class to avoid the work of figuring out the byteBuffer's address in
      * memory.
      * 
@@ -135,19 +135,19 @@ public class RAMCloudTransaction {
      * that reference it. 
      */
     public long getByteBufferPointer() {
-        return byteBufferPointer;
+        return cppByteBufferPointer;
     }
 
     public void clear() {
         byteBuffer.rewind();
         byteBuffer.putLong(cppTransactionObjectPointer);
-        cppDeconstructor(byteBufferPointer);
+        cppDeconstructor(cppByteBufferPointer);
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
         
         byteBuffer.rewind();
         byteBuffer.putLong(cppRamcloudObjectPointer);
-        cppConstructor(byteBufferPointer);
+        cppConstructor(cppByteBufferPointer);
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
         cppTransactionObjectPointer = byteBuffer.getLong();
@@ -163,7 +163,7 @@ public class RAMCloudTransaction {
         if (cppTransactionObjectPointer != 0) {
             byteBuffer.rewind();
             byteBuffer.putLong(cppTransactionObjectPointer);
-            cppDeconstructor(byteBufferPointer);
+            cppDeconstructor(cppByteBufferPointer);
             byteBuffer.rewind();
             cppTransactionObjectPointer = 0;   
             ClientException.checkStatus(byteBuffer.getInt());
@@ -192,7 +192,7 @@ public class RAMCloudTransaction {
     public boolean commit() {
         byteBuffer.rewind();
         byteBuffer.putLong(cppTransactionObjectPointer);
-        cppCommit(byteBufferPointer);
+        cppCommit(cppByteBufferPointer);
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
         return (byteBuffer.getInt() == 1);
@@ -208,7 +208,7 @@ public class RAMCloudTransaction {
     public void sync() {
         byteBuffer.rewind();
         byteBuffer.putLong(cppTransactionObjectPointer);
-        cppSync(byteBufferPointer);
+        cppSync(cppByteBufferPointer);
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
     }
@@ -223,7 +223,7 @@ public class RAMCloudTransaction {
     public boolean commitAndSync() {
         byteBuffer.rewind();
         byteBuffer.putLong(cppTransactionObjectPointer);
-        cppCommitAndSync(byteBufferPointer);
+        cppCommitAndSync(cppByteBufferPointer);
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
         return (byteBuffer.getInt() == 1);
@@ -260,7 +260,7 @@ public class RAMCloudTransaction {
                 .putInt(key.length)
                 .put(key);
         
-        cppRead(byteBufferPointer);
+        cppRead(cppByteBufferPointer);
 
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
@@ -307,7 +307,7 @@ public class RAMCloudTransaction {
                 .putLong(tableId)
                 .putInt(key.length)
                 .put(key);
-        cppRemove(byteBufferPointer);
+        cppRemove(cppByteBufferPointer);
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
     }
@@ -354,19 +354,19 @@ public class RAMCloudTransaction {
                 .putInt(value.length)
                 .put(value);
 
-        cppWrite(byteBufferPointer);
+        cppWrite(cppByteBufferPointer);
 
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
     }
     
     // Documentation for native methods located in C++ files
-    protected native void cppConstructor(long byteBufferPointer);
-    protected native void cppDeconstructor(long byteBufferPointer);
-    protected native void cppCommit(long byteBufferPointer);
-    protected native void cppSync(long byteBufferPointer);
-    protected native void cppCommitAndSync(long byteBufferPointer);
-    protected native void cppRead(long byteBufferPointer);
-    protected native void cppRemove(long byteBufferPointer);
-    protected native void cppWrite(long byteBufferPointer);
+    protected native void cppConstructor(long cppByteBufferPointer);
+    protected native void cppDeconstructor(long cppByteBufferPointer);
+    protected native void cppCommit(long cppByteBufferPointer);
+    protected native void cppSync(long cppByteBufferPointer);
+    protected native void cppCommitAndSync(long cppByteBufferPointer);
+    protected native void cppRead(long cppByteBufferPointer);
+    protected native void cppRemove(long cppByteBufferPointer);
+    protected native void cppWrite(long cppByteBufferPointer);
 }
