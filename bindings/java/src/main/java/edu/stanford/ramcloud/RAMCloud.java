@@ -92,9 +92,9 @@ public class RAMCloud {
     private ByteBuffer byteBuffer;
 
     /**
-     * Pointer to the memory location that byteBuffer wraps.
+     * C++ pointer to the shared memory location that byteBuffer wraps.
      */
-    private long byteBufferPointer;
+    private long cppByteBufferPointer;
 
     /**
      * Accessor method for byteBuffer. Used by the Transaction class to reuse 
@@ -111,7 +111,7 @@ public class RAMCloud {
     }
     
     /**
-     * Accessor method for byteBufferPointer. Used by the Transaction class to 
+     * Accessor method for cppByteBufferPointer. Used by the Transaction class to 
      * avoid the work of figuring out the byteBuffer's address in memory.
      * 
      * @return Pointer referring to the byteBuffer in memory.
@@ -121,7 +121,7 @@ public class RAMCloud {
      * that reference it. 
      */
     public long getByteBufferPointer() {
-        return byteBufferPointer;
+        return cppByteBufferPointer;
     }
     
     /**
@@ -159,13 +159,13 @@ public class RAMCloud {
     public RAMCloud(String locator, String clusterName) {
         byteBuffer = ByteBuffer.allocateDirect(bufferCapacity);
         byteBuffer.order(ByteOrder.LITTLE_ENDIAN);
-        byteBufferPointer = cppGetByteBufferPointer(byteBuffer);
+        cppByteBufferPointer = cppGetByteBufferPointer(byteBuffer);
         byteBuffer.putInt(locator.length())
                 .put(locator.getBytes())
                 .put((byte) 0)
                 .put(clusterName.getBytes())
                 .put((byte) 0);
-        cppConnect(byteBufferPointer);
+        cppConnect(cppByteBufferPointer);
         byteBuffer.rewind();
         checkStatus(byteBuffer.getInt());
         ramcloudClusterHandle = byteBuffer.getLong();
@@ -187,7 +187,7 @@ public class RAMCloud {
     public RAMCloud(long ramcloudClusterHandle) {
         byteBuffer = ByteBuffer.allocateDirect(bufferCapacity);
         byteBuffer.order(ByteOrder.LITTLE_ENDIAN);
-        byteBufferPointer = cppGetByteBufferPointer(byteBuffer);
+        cppByteBufferPointer = cppGetByteBufferPointer(byteBuffer);
         this.ramcloudClusterHandle = ramcloudClusterHandle;
     }
 
@@ -266,7 +266,7 @@ public class RAMCloud {
                 .put(getRejectRulesBytes(rules));
         // long end = System.nanoTime() - time;
         // System.out.printf("%f\n", ((double) (end) / 1000.0));
-        cppRead(byteBufferPointer);
+        cppRead(cppByteBufferPointer);
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
         long version = byteBuffer.getLong();
@@ -326,7 +326,7 @@ public class RAMCloud {
                 .putInt(key.length)
                 .put(key)
                 .put(getRejectRulesBytes(rules));
-        RAMCloud.cppRemove(byteBufferPointer);
+        RAMCloud.cppRemove(cppByteBufferPointer);
         byteBuffer.rewind();
         int status = byteBuffer.getInt();
         checkStatus(status);
@@ -403,7 +403,7 @@ public class RAMCloud {
                 .putInt(value.length)
                 .put(value)
                 .put(getRejectRulesBytes(rules));
-        cppWrite(byteBufferPointer);
+        cppWrite(cppByteBufferPointer);
         byteBuffer.rewind();
         checkStatus(byteBuffer.getInt());
         long version = byteBuffer.getLong();
@@ -418,7 +418,7 @@ public class RAMCloud {
                 .put(key)
                 .putLong(incrementValue)
                 .put(getRejectRulesBytes(rules));
-        cppIncrementInt64(byteBufferPointer);
+        cppIncrementInt64(cppByteBufferPointer);
         byteBuffer.rewind();
         checkStatus(byteBuffer.getInt());
         long value = byteBuffer.getLong();
@@ -448,7 +448,7 @@ public class RAMCloud {
                 .putInt(serverSpan)
                 .put(name.getBytes())
                 .put((byte) 0);
-        RAMCloud.cppCreateTable(byteBufferPointer);
+        RAMCloud.cppCreateTable(cppByteBufferPointer);
         byteBuffer.rewind();
         checkStatus(byteBuffer.getInt());
         long tableId = byteBuffer.getLong();
@@ -484,7 +484,7 @@ public class RAMCloud {
         byteBuffer.putLong(ramcloudClusterHandle)
                 .put(name.getBytes())
                 .put((byte) 0);
-        RAMCloud.cppDropTable(byteBufferPointer);
+        RAMCloud.cppDropTable(cppByteBufferPointer);
         byteBuffer.rewind();
         checkStatus(byteBuffer.getInt());
     }
@@ -504,7 +504,7 @@ public class RAMCloud {
         byteBuffer.putLong(ramcloudClusterHandle)
                 .put(name.getBytes())
                 .put((byte) 0);
-        RAMCloud.cppGetTableId(byteBufferPointer);
+        RAMCloud.cppGetTableId(cppByteBufferPointer);
         byteBuffer.rewind();
         checkStatus(byteBuffer.getInt());
         long tableId = byteBuffer.getLong();
@@ -535,7 +535,7 @@ public class RAMCloud {
     public void read(MultiReadObject[] request) {
         if (multiReadHandler == null) {
             multiReadHandler = new MultiReadHandler(byteBuffer,
-                                                    byteBufferPointer,
+                                                    cppByteBufferPointer,
                                                     ramcloudClusterHandle);
         }
         multiReadHandler.handle(request);
@@ -552,7 +552,7 @@ public class RAMCloud {
     public void write(MultiWriteObject[] data) {
         if (multiWriteHandler == null) {
             multiWriteHandler = new MultiWriteHandler(byteBuffer,
-                                                      byteBufferPointer,
+                                                      cppByteBufferPointer,
                                                       ramcloudClusterHandle);
         }
         multiWriteHandler.handle(data);
@@ -569,7 +569,7 @@ public class RAMCloud {
     public void remove(MultiRemoveObject[] data) {
         if (multiRemoveHandler == null) {
             multiRemoveHandler = new MultiRemoveHandler(byteBuffer,
-                                                      byteBufferPointer,
+                                                      cppByteBufferPointer,
                                                       ramcloudClusterHandle);
         }
         multiRemoveHandler.handle(data);
@@ -578,23 +578,23 @@ public class RAMCloud {
     // Declarations for native methods in c++ file
     private static native long cppGetByteBufferPointer(ByteBuffer byteBuffer);
 
-    private static native void cppConnect(long byteBufferPointer);
+    private static native void cppConnect(long cppByteBufferPointer);
 
-    private static native void cppDisconnect(long byteBufferPointer);
+    private static native void cppDisconnect(long cppByteBufferPointer);
 
-    private static native void cppCreateTable(long byteBufferPointer);
+    private static native void cppCreateTable(long cppByteBufferPointer);
 
-    private static native void cppDropTable(long byteBufferPointer);
+    private static native void cppDropTable(long cppByteBufferPointer);
 
-    private static native void cppGetTableId(long byteBufferPointer);
+    private static native void cppGetTableId(long cppByteBufferPointer);
 
-    private static native void cppRead(long byteBufferPointer);
+    private static native void cppRead(long cppByteBufferPointer);
 
-    private static native void cppRemove(long byteBufferPointer);
+    private static native void cppRemove(long cppByteBufferPointer);
 
-    private static native void cppWrite(long byteBufferPointer);
+    private static native void cppWrite(long cppByteBufferPointer);
     
-    private static native void cppIncrementInt64(long byteBufferPointer);
+    private static native void cppIncrementInt64(long cppByteBufferPointer);
 
     private static native void cppMultiRemove(long ramcloudClusterHandle,
                                               long[] tableIds,
