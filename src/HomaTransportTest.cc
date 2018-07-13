@@ -14,7 +14,7 @@
  */
 
 #include "TestUtil.h"
-#include "BasicTransport.h"
+#include "HomaTransport.h"
 #include "MockDriver.h"
 #include "MockWrapper.h"
 #include "UdpDriver.h"
@@ -22,27 +22,27 @@
 
 namespace RAMCloud {
 
-class BasicTransportTest : public ::testing::Test {
+class HomaTransportTest : public ::testing::Test {
   public:
     Context context;
     MockDriver* driver;
-    BasicTransport transport;
+    HomaTransport transport;
     MockDriver::MockAddress address1;
     MockDriver::MockAddress address2;
     ServiceLocator locator;
     Transport::SessionRef sessionRef;
-    BasicTransport::Session* session;
+    HomaTransport::Session* session;
     TestLog::Enable logEnabler;
 
-    BasicTransportTest()
+    HomaTransportTest()
         : context(false)
-        , driver(new MockDriver(BasicTransport::headerToString))
+        , driver(new MockDriver(HomaTransport::headerToString))
         , transport(&context, NULL, driver, true, 666)
         , address1("mock:node=1")
         , address2("mock:node=2")
         , locator("mock:node=3")
         , sessionRef(transport.getSession(&locator))
-        , session(static_cast<BasicTransport::Session*>(sessionRef.get()))
+        , session(static_cast<HomaTransport::Session*>(sessionRef.get()))
         , logEnabler()
     {
         context.workerManager = new WorkerManager(&context, 5);
@@ -51,9 +51,17 @@ class BasicTransportTest : public ::testing::Test {
         Driver::Received::stealCount = 0;
     }
 
-    ~BasicTransportTest()
+    ~HomaTransportTest()
     {
         Cycles::mockTscValue = 0;
+    }
+
+    HomaTransport::ServerRpc*
+    getServerRpc(HomaTransport::RpcId rpcId)
+    {
+        HomaTransport::ServerRpcMap::iterator it =
+                transport.incomingRpcs.find(rpcId);
+        return it != transport.incomingRpcs.end() ? it->second : NULL;
     }
 
     // Assembles a packet and passes it to the transport as input.
@@ -70,16 +78,16 @@ class BasicTransportTest : public ::testing::Test {
 
     // Convenience method: receive request, prepare response, but don't
     // call sendReply yet.
-    BasicTransport::ServerRpc*
+    HomaTransport::ServerRpc*
     prepareToRespond(uint64_t sequence = 101, uint32_t responseSize = 20,
             const char* responseData = "0123456789abcdefghijABCDEFGHIJ")
     {
         handlePacket("mock:client=1",
-                BasicTransport::AllDataHeader(
-                BasicTransport::RpcId(100, sequence),
-                BasicTransport::FROM_CLIENT, 8), "message1");
-        BasicTransport::ServerRpc* serverRpc =
-                static_cast<BasicTransport::ServerRpc*>(
+                HomaTransport::AllDataHeader(
+                HomaTransport::RpcId(100, sequence),
+                HomaTransport::FROM_CLIENT, 8), "message1");
+        HomaTransport::ServerRpc* serverRpc =
+                static_cast<HomaTransport::ServerRpc*>(
                 context.workerManager->waitForRpc(0));
         EXPECT_TRUE(serverRpc != NULL);
         uint32_t dataLength = downCast<uint32_t>(strlen(responseData));
@@ -114,19 +122,19 @@ class BasicTransportTest : public ::testing::Test {
     }
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(BasicTransportTest);
+    DISALLOW_COPY_AND_ASSIGN(HomaTransportTest);
 };
 
-TEST_F(BasicTransportTest, sanityCheck) {
+TEST_F(HomaTransportTest, sanityCheck) {
     // Create a server and a client and verify that we can
     // send a request, receive it, send a reply, and receive it.
     // Then try a second request with bigger chunks of data.
 
-    ServiceLocator serverLocator("basic+udp: host=localhost, port=11101");
+    ServiceLocator serverLocator("homa+udp: host=localhost, port=11101");
     UdpDriver* serverDriver = new UdpDriver(&context, &serverLocator);
-    BasicTransport server(&context, &serverLocator, serverDriver, true, 1);
+    HomaTransport server(&context, &serverLocator, serverDriver, true, 1);
     UdpDriver* clientDriver = new UdpDriver(&context);
-    BasicTransport client(&context, NULL, clientDriver, true, 2);
+    HomaTransport client(&context, NULL, clientDriver, true, 2);
     Transport::SessionRef session = client.getSession(&serverLocator);
 
     MockWrapper rpc1("abcdefg");
@@ -155,11 +163,11 @@ TEST_F(BasicTransportTest, sanityCheck) {
     EXPECT_EQ("ok", TestUtil::checkLargeBuffer(&rpc2.response, 50000));
 }
 
-TEST_F(BasicTransportTest, constructor) {
+TEST_F(HomaTransportTest, constructor) {
     EXPECT_EQ(10960u, transport.roundTripBytes);
 }
 
-TEST_F(BasicTransportTest, deleteClientRpc) {
+TEST_F(HomaTransportTest, deleteClientRpc) {
     string request(10001, 'x');
     MockWrapper wrapper(request.c_str());
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
@@ -171,9 +179,9 @@ TEST_F(BasicTransportTest, deleteClientRpc) {
     EXPECT_EQ(0u, transport.outgoingRpcs.size());
 }
 
-TEST_F(BasicTransportTest, deleteServerRpc) {
+TEST_F(HomaTransportTest, deleteServerRpc) {
     string response(10001, 'x');
-    BasicTransport::ServerRpc* serverRpc = prepareToRespond(101,
+    HomaTransport::ServerRpc* serverRpc = prepareToRespond(101,
             downCast<uint32_t>(response.size()), response.c_str());
     transport.roundTripBytes = 10;
     transport.maxDataPerPacket = 10;
@@ -188,67 +196,131 @@ TEST_F(BasicTransportTest, deleteServerRpc) {
     EXPECT_EQ(0lu, transport.serverTimerList.size());
 }
 
-TEST_F(BasicTransportTest, getRoundTripBytes_basics) {
+TEST_F(HomaTransportTest, getRoundTripBytes_basics) {
     transport.maxDataPerPacket = 1500;
     ServiceLocator locator("mock:gbs=8,rttMicros=2");
     EXPECT_EQ(3000u, transport.getRoundTripBytes(&locator));
 }
-TEST_F(BasicTransportTest, getRoundTripBytes_noGbsOption) {
+TEST_F(HomaTransportTest, getRoundTripBytes_noGbsOption) {
     transport.maxDataPerPacket = 100;
     ServiceLocator locator("mock:rttMicros=4");
     EXPECT_EQ(5000u, transport.getRoundTripBytes(&locator));
 }
-TEST_F(BasicTransportTest, getRoundTripBytes_bogusGbsOption) {
+TEST_F(HomaTransportTest, getRoundTripBytes_bogusGbsOption) {
     transport.maxDataPerPacket = 100;
     ServiceLocator locator("mock:gbs=xyz,rttMicros=4");
     TestLog::reset();
     EXPECT_EQ(5000u, transport.getRoundTripBytes(&locator));
-    EXPECT_EQ("getRoundTripBytes: Bad BasicTransport gbs option value 'xyz' "
-            "(expected positive integer); ignoring option",
+    EXPECT_EQ("getRoundTripBytes: Bad HomaTransport gbs option value 'xyz' "
+            "(expected positive integer); ignoring option | getRoundTripBytes: "
+            "roundTripMicros 4, gBitsPerSec 10, roundTripBytes 5000",
             TestLog::get());
 
     ServiceLocator locator2("mock:gbs=99foo,rttMicros=4");
     TestLog::reset();
     EXPECT_EQ(5000u, transport.getRoundTripBytes(&locator2));
-    EXPECT_EQ("getRoundTripBytes: Bad BasicTransport gbs option value '99foo' "
-            "(expected positive integer); ignoring option",
+    EXPECT_EQ("getRoundTripBytes: Bad HomaTransport gbs option value '99foo' "
+            "(expected positive integer); ignoring option | getRoundTripBytes: "
+            "roundTripMicros 4, gBitsPerSec 10, roundTripBytes 5000",
             TestLog::get());
 }
-TEST_F(BasicTransportTest, getRoundTripBytes_noRttOption) {
+TEST_F(HomaTransportTest, getRoundTripBytes_noRttOption) {
     transport.maxDataPerPacket = 100;
     ServiceLocator locator("mock:gbs=8");
     EXPECT_EQ(8000u, transport.getRoundTripBytes(&locator));
 }
-TEST_F(BasicTransportTest, getRoundTripBytes_bogusRttOption) {
+TEST_F(HomaTransportTest, getRoundTripBytes_bogusRttOption) {
     transport.maxDataPerPacket = 100;
     ServiceLocator locator("mock:gbs=8,rttMicros=xyz");
     TestLog::reset();
     EXPECT_EQ(8000u, transport.getRoundTripBytes(&locator));
-    EXPECT_EQ("getRoundTripBytes: Bad BasicTransport rttMicros option value "
-            "'xyz' (expected positive integer); ignoring option",
-            TestLog::get());
+    EXPECT_EQ("getRoundTripBytes: Bad HomaTransport rttMicros option value "
+            "'xyz' (expected positive integer); ignoring option | "
+            "getRoundTripBytes: roundTripMicros 8, gBitsPerSec 8, "
+            "roundTripBytes 8000", TestLog::get());
 
     ServiceLocator locator2("mock:gbs=8,rttMicros=5zzz");
     TestLog::reset();
     EXPECT_EQ(8000u, transport.getRoundTripBytes(&locator2));
-    EXPECT_EQ("getRoundTripBytes: Bad BasicTransport rttMicros option value "
-            "'5zzz' (expected positive integer); ignoring option",
-            TestLog::get());
+    EXPECT_EQ("getRoundTripBytes: Bad HomaTransport rttMicros option value "
+            "'5zzz' (expected positive integer); ignoring option | "
+            "getRoundTripBytes: roundTripMicros 8, gBitsPerSec 8, "
+            "roundTripBytes 8000", TestLog::get());
 }
-TEST_F(BasicTransportTest, getRoundTripBytes_roundUpToEvenPackets) {
+TEST_F(HomaTransportTest, getRoundTripBytes_roundUpToEvenPackets) {
     transport.maxDataPerPacket = 100;
     ServiceLocator locator("mock:gbs=1,rttMicros=9");
     EXPECT_EQ(1200u, transport.getRoundTripBytes(&locator));
 }
+TEST_F(HomaTransportTest, getOvercommitmentDegree) {
+    // No option supplied, # scheduled priorities too small.
+    EXPECT_EQ(4u, transport.getOvercommitmentDegree(NULL, 3));
+    // No option supplied, # scheduled priorities large enough.
+    EXPECT_EQ(5u, transport.getOvercommitmentDegree(NULL, 5));
+    // Bad "degreeOC" value.
+    ServiceLocator locator1("mock:degreeOC=0");
+    EXPECT_EQ(7u, transport.getOvercommitmentDegree(&locator1, 7));
+    // Good "degreeOC" value.
+    ServiceLocator locator2("mock:degreeOC=3");
+    EXPECT_EQ(3u, transport.getOvercommitmentDegree(&locator2, 7));
+}
+TEST_F(HomaTransportTest, getUnschedPriorities) {
+    int lowest, highest;
+    EXPECT_EQ(7, driver->getHighestPacketPriority());
+    // No option supplied.
+    transport.getUnschedPriorities(NULL, &lowest, &highest);
+    EXPECT_EQ(7, lowest);
+    EXPECT_EQ(7, highest);
+    // Supply only "numPrio".
+    ServiceLocator locator1("mock:numPrio=4");
+    transport.getUnschedPriorities(&locator1, &lowest, &highest);
+    EXPECT_EQ(3, lowest);
+    EXPECT_EQ(3, highest);
+    // Supply only "unschedPrio".
+    ServiceLocator locator2("mock:unschedPrio=4");
+    transport.getUnschedPriorities(&locator2, &lowest, &highest);
+    EXPECT_EQ(4, lowest);
+    EXPECT_EQ(7, highest);
+    // Supply both "numPrio" and "unschedPrio".
+    ServiceLocator locator3("mock:numPrio=4, unschedPrio=2");
+    transport.getUnschedPriorities(&locator3, &lowest, &highest);
+    EXPECT_EQ(2, lowest);
+    EXPECT_EQ(3, highest);
+    // Bad "numPrio" value.
+    TestLog::reset();
+    ServiceLocator locator4("mock:numPrio=-1");
+    transport.getUnschedPriorities(&locator4, &lowest, &highest);
+    EXPECT_EQ("getUnschedPriorities: Bad HomaTransport numPrio option value"
+            " '-1' (expected (0, 8]); ignoring option", TestLog::get());
+    // Bad "unschedPrio" value.
+    TestLog::reset();
+    ServiceLocator locator5("mock:numPrio=4,unschedPrio=5");
+    transport.getUnschedPriorities(&locator5, &lowest, &highest);
+    EXPECT_EQ("getUnschedPriorities: Bad HomaTransport unschedPrio option "
+            "value '5' (expected (0, 4]); ignoring option", TestLog::get());
+}
+TEST_F(HomaTransportTest, getUnschedPrioCutoffs) {
+    TestLog::reset();
+    vector<uint32_t> cutoffs = transport.getUnschedPrioCutoffs(NULL, 1);
+    EXPECT_EQ("getUnschedPrioCutoffs: Priority brackets for unscheduled "
+             "messages: [0, 4294967295]", TestLog::get());
 
-TEST_F(BasicTransportTest, sendBytes_basics) {
+    TestLog::reset();
+    ServiceLocator locator("mock:unschedPrioCutoffs=469.5521.15267");
+    cutoffs = transport.getUnschedPrioCutoffs(&locator, 4);
+    EXPECT_EQ("getUnschedPrioCutoffs: Priority brackets for unscheduled "
+             "messages: [0, 468] [469, 5520] [5521, 15266] [15267, 4294967295]",
+             TestLog::get());
+}
+
+TEST_F(HomaTransportTest, sendBytes_basics) {
     transport.maxDataPerPacket = 10;
     uint32_t unscheduledBytes = transport.roundTripBytes;
     Buffer buffer;
     buffer.append("abcdefghijklmno1234567890", 25);
     uint32_t count = transport.sendBytes(&address1,
-            BasicTransport::RpcId(5, 6), &buffer, 0, 50,
-            unscheduledBytes, BasicTransport::FROM_SERVER);
+            HomaTransport::RpcId(5, 6), &buffer, 0, 50,
+            unscheduledBytes, 1, HomaTransport::FROM_SERVER);
     EXPECT_EQ("DATA FROM_SERVER, rpcId 5.6, totalLength 25, "
             "offset 0 abcdefghij | "
             "DATA FROM_SERVER, rpcId 5.6, totalLength 25, "
@@ -258,38 +330,38 @@ TEST_F(BasicTransportTest, sendBytes_basics) {
             driver->outputLog);
     EXPECT_EQ(25u, count);
 }
-TEST_F(BasicTransportTest, sendBytes_partialPacket) {
+TEST_F(HomaTransportTest, sendBytes_partialPacket) {
     transport.maxDataPerPacket = 10;
     uint32_t unscheduledBytes = transport.roundTripBytes;
     Buffer buffer;
     buffer.append("abcdefghijklmno1234567890", 25);
     uint32_t count = transport.sendBytes(&address1,
-            BasicTransport::RpcId(5, 6), &buffer, 5, 9,
-            unscheduledBytes, BasicTransport::FROM_SERVER);
+            HomaTransport::RpcId(5, 6), &buffer, 5, 9,
+            unscheduledBytes, 1, HomaTransport::FROM_SERVER);
     EXPECT_EQ("", driver->outputLog);
     EXPECT_EQ(0u, count);
-    count = transport.sendBytes(&address1, BasicTransport::RpcId(5, 6),
-            &buffer, 5, 5, unscheduledBytes, BasicTransport::FROM_SERVER,
+    count = transport.sendBytes(&address1, HomaTransport::RpcId(5, 6),
+            &buffer, 5, 5, unscheduledBytes, 1, HomaTransport::FROM_SERVER,
             true);
     EXPECT_EQ("DATA FROM_SERVER, rpcId 5.6, totalLength 25, "
             "offset 5 fghij",
             driver->outputLog);
     EXPECT_EQ(5u, count);
 }
-TEST_F(BasicTransportTest, sendBytes_shortMessage) {
+TEST_F(HomaTransportTest, sendBytes_shortMessage) {
     transport.maxDataPerPacket = 100;
     uint32_t unscheduledBytes = transport.roundTripBytes;
     Buffer buffer;
     buffer.append("abcdefghijklmno", 15);
     uint32_t count = transport.sendBytes(&address1,
-            BasicTransport::RpcId(5, 6), &buffer, 0, 16,
-            unscheduledBytes, BasicTransport::FROM_CLIENT);
+            HomaTransport::RpcId(5, 6), &buffer, 0, 16,
+            unscheduledBytes, 1, HomaTransport::FROM_CLIENT);
     EXPECT_EQ("ALL_DATA FROM_CLIENT, rpcId 5.6 abcdefghij (+5 more)",
             driver->outputLog);
     EXPECT_EQ(15u, count);
 }
 
-TEST_F(BasicTransportTest, tryToTransmitData_pickShortestRequest) {
+TEST_F(HomaTransportTest, tryToTransmitData_pickShortestRequest) {
     transport.maxDataPerPacket = 10;
     driver->transmitQueueSpace = 0;
     char longMessage[20001];
@@ -308,20 +380,20 @@ TEST_F(BasicTransportTest, tryToTransmitData_pickShortestRequest) {
     EXPECT_EQ(14u, result);
     EXPECT_EQ(2u, transport.outgoingRequests.size());
     EXPECT_EQ(2u, transport.topOutgoingMessages.size());
-    BasicTransport::ClientRpc* clientRpc1 = transport.outgoingRpcs[1lu];
+    HomaTransport::ClientRpc* clientRpc1 = transport.outgoingRpcs[1lu];
     EXPECT_EQ(0u, clientRpc1->request.transmitOffset);
-    BasicTransport::ClientRpc* clientRpc3 = transport.outgoingRpcs[3lu];
+    HomaTransport::ClientRpc* clientRpc3 = transport.outgoingRpcs[3lu];
     EXPECT_EQ(10u, clientRpc3->request.transmitOffset);
 }
-TEST_F(BasicTransportTest, tryToTransmitData_pickShortestResponse) {
+TEST_F(HomaTransportTest, tryToTransmitData_pickShortestResponse) {
     transport.maxDataPerPacket = 10;
     driver->transmitQueueSpace = 0;
-    BasicTransport::ServerRpc* serverRpc1 = prepareToRespond(200, 20000,
+    HomaTransport::ServerRpc* serverRpc1 = prepareToRespond(200, 20000,
             "aaaaaaaaaa");
     serverRpc1->sendReply();
-    BasicTransport::ServerRpc* serverRpc2 = prepareToRespond(201, 5, "bbbbb");
+    HomaTransport::ServerRpc* serverRpc2 = prepareToRespond(201, 5, "bbbbb");
     serverRpc2->sendReply();
-    BasicTransport::ServerRpc* serverRpc3 = prepareToRespond(202, 15, "ccccc");
+    HomaTransport::ServerRpc* serverRpc3 = prepareToRespond(202, 15, "ccccc");
     serverRpc3->sendReply();
     driver->transmitQueueSpace = 18;
     uint32_t result = transport.tryToTransmitData();
@@ -337,7 +409,7 @@ TEST_F(BasicTransportTest, tryToTransmitData_pickShortestResponse) {
     EXPECT_EQ(5u, serverRpc2->response.transmitOffset);
     EXPECT_EQ(10u, serverRpc3->response.transmitOffset);
 }
-TEST_F(BasicTransportTest, tryToTransmitData_requestsAndResponsesToTransmit) {
+TEST_F(HomaTransportTest, tryToTransmitData_requestsAndResponsesToTransmit) {
     transport.maxDataPerPacket = 10;
     driver->transmitQueueSpace = 0;
     MockWrapper wrapper1("012345678901234");
@@ -345,7 +417,7 @@ TEST_F(BasicTransportTest, tryToTransmitData_requestsAndResponsesToTransmit) {
     MockWrapper wrapper2("abcd");
     session->sendRequest(&wrapper2.request, &wrapper2.response, &wrapper2);
     MockWrapper wrapper3("0123456789012345");
-    BasicTransport::ServerRpc* serverRpc1 = prepareToRespond(200, 15);
+    HomaTransport::ServerRpc* serverRpc1 = prepareToRespond(200, 15);
     serverRpc1->sendReply();
     driver->transmitQueueSpace = 35;
     uint32_t result = transport.tryToTransmitData();
@@ -361,7 +433,7 @@ TEST_F(BasicTransportTest, tryToTransmitData_requestsAndResponsesToTransmit) {
             driver->outputLog);
     EXPECT_EQ(34u, result);
 }
-TEST_F(BasicTransportTest, tryToTransmitData_slowPath) {
+TEST_F(HomaTransportTest, tryToTransmitData_slowPath) {
     // The top outgoing message set is populated with four shorter requests
     // that are waiting for grants.
     transport.roundTripBytes = 0;
@@ -385,8 +457,8 @@ TEST_F(BasicTransportTest, tryToTransmitData_slowPath) {
     MockWrapper wrapper5("0123456789abcde");
     session->sendRequest(&wrapper5.request, &wrapper5.response, &wrapper5);
     handlePacket("mock:server=1",
-            BasicTransport::GrantHeader(BasicTransport::RpcId(666, 5), 10,
-            BasicTransport::FROM_SERVER));
+            HomaTransport::GrantHeader(HomaTransport::RpcId(666, 5), 10, 1,
+            HomaTransport::FROM_SERVER));
     EXPECT_TRUE(transport.transmitDataSlowPath);
 
     // Now, try to transmit some data. Before transmitting message 5, the slow
@@ -413,14 +485,14 @@ TEST_F(BasicTransportTest, tryToTransmitData_slowPath) {
     EXPECT_FALSE(transport.transmitDataSlowPath);
 }
 
-TEST_F(BasicTransportTest, tryToTransmitData_negativeTransmitQueueSpace) {
+TEST_F(HomaTransportTest, tryToTransmitData_negativeTransmitQueueSpace) {
     driver->transmitQueueSpace = -999;
     MockWrapper wrapper1("012345678901234");
     session->sendRequest(&wrapper1.request, &wrapper1.response, &wrapper1);
     EXPECT_EQ("", driver->outputLog);
 }
 
-TEST_F(BasicTransportTest, maintainTopOutgoingMessages) {
+TEST_F(HomaTransportTest, maintainTopOutgoingMessages) {
     // Enter four RPC requests but don't send any byte yet.
     driver->transmitQueueSpace = 0;
     transport.transmitDataSlowPath = false;
@@ -454,10 +526,10 @@ TEST_F(BasicTransportTest, maintainTopOutgoingMessages) {
     EXPECT_FALSE(transport.outgoingRpcs[6]->request.topChoice);
 }
 
-TEST_F(BasicTransportTest, Session_constructor) {
-    ServiceLocator locator("basic+udp: host=localhost, port=11101");
+TEST_F(HomaTransportTest, Session_constructor) {
+    ServiceLocator locator("homa+udp: host=localhost, port=11101");
     UdpDriver* driver2 = new UdpDriver(&context, &locator);
-    BasicTransport transport2(&context, &locator, driver2, true, 1);
+    HomaTransport transport2(&context, &locator, driver2, true, 1);
     string exceptionMessage("no exception");
     try {
         ServiceLocator bogusLocator("bogus:foo=bar");
@@ -466,14 +538,14 @@ TEST_F(BasicTransportTest, Session_constructor) {
     } catch (TransportException& e) {
         exceptionMessage = e.message;
     }
-    EXPECT_EQ("BasicTransport couldn't parse service locator",
+    EXPECT_EQ("HomaTransport couldn't parse service locator",
             exceptionMessage);
     EXPECT_EQ("Session: Service locator 'bogus:foo=bar' couldn't be "
             "converted to IP address: The option with key 'host' was "
             "not found in the ServiceLocator.", TestLog::get());
 }
 
-TEST_F(BasicTransportTest, Session_destructor) {
+TEST_F(HomaTransportTest, Session_destructor) {
     Transport::RpcNotifier notifier1, notifier2;
     Buffer request1, request2;
     Buffer response1, response2;
@@ -489,7 +561,7 @@ TEST_F(BasicTransportTest, Session_destructor) {
 
 // Session::abort already tested by Session destructor above.
 
-TEST_F(BasicTransportTest, Session_cancelRequest) {
+TEST_F(HomaTransportTest, Session_cancelRequest) {
     Transport::RpcNotifier notifier1, notifier2;
 #define NUM_RPCS 10
     Transport::RpcNotifier notifiers[NUM_RPCS];
@@ -514,7 +586,7 @@ TEST_F(BasicTransportTest, Session_cancelRequest) {
             " | ABORT FROM_CLIENT, rpcId 666.3", driver->outputLog);
 }
 
-TEST_F(BasicTransportTest, Session_getRpcInfo) {
+TEST_F(HomaTransportTest, Session_getRpcInfo) {
     Transport::RpcNotifier notifier1, notifier2;
     WireFormat::RequestCommon header1 = {WireFormat::PING, 0};
     WireFormat::RequestCommon header2 = {WireFormat::READ, 0};
@@ -532,13 +604,13 @@ TEST_F(BasicTransportTest, Session_getRpcInfo) {
             "READ, PING to server at mock:node=3") == 0));
 }
 
-TEST_F(BasicTransportTest, Session_sendRequest_aborted) {
+TEST_F(HomaTransportTest, Session_sendRequest_aborted) {
     MockWrapper wrapper("message1");
     session->abort();
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
     EXPECT_EQ("", driver->outputLog);
 }
-TEST_F(BasicTransportTest, Session_sendRequest_normal) {
+TEST_F(HomaTransportTest, Session_sendRequest_normal) {
     transport.roundTripBytes = 1000;
     transport.maxDataPerPacket = 10;
     driver->transmitQueueSpace = 10;
@@ -546,16 +618,16 @@ TEST_F(BasicTransportTest, Session_sendRequest_normal) {
     MockWrapper wrapper2("message2");
     session->sendRequest(&wrapper1.request, &wrapper1.response, &wrapper1);
     session->sendRequest(&wrapper2.request, &wrapper2.response, &wrapper2);
-    BasicTransport::ClientRpc* clientRpc1 = transport.outgoingRpcs[1lu];
+    HomaTransport::ClientRpc* clientRpc1 = transport.outgoingRpcs[1lu];
     EXPECT_EQ(8u, clientRpc1->request.transmitOffset);
-    BasicTransport::ClientRpc* clientRpc2 = transport.outgoingRpcs[2lu];
+    HomaTransport::ClientRpc* clientRpc2 = transport.outgoingRpcs[2lu];
     EXPECT_EQ(8u, clientRpc2->request.transmitLimit);
     EXPECT_EQ(0u, clientRpc2->request.transmitOffset);
     EXPECT_EQ(2u, transport.outgoingRpcs.size());
     EXPECT_EQ(1u, transport.outgoingRequests.size());
     EXPECT_EQ(3u, transport.nextClientSequenceNumber);
 }
-TEST_F(BasicTransportTest, Session_sendRequest_smallMessage) {
+TEST_F(HomaTransportTest, Session_sendRequest_smallMessage) {
     // Small messages are passed to the NIC directly, bypassing the
     // sender's congestion control mechanism in tryToTransmitData.
     driver->transmitQueueSpace = -1;
@@ -569,7 +641,7 @@ TEST_F(BasicTransportTest, Session_sendRequest_smallMessage) {
             driver->outputLog);
 }
 
-TEST_F(BasicTransportTest, handlePacket_noHeader) {
+TEST_F(HomaTransportTest, handlePacket_noHeader) {
     struct msg {
         char body[6];
     };
@@ -581,57 +653,57 @@ TEST_F(BasicTransportTest, handlePacket_noHeader) {
     EXPECT_EQ("handlePacket: packet from mock:client=1 too short (6 bytes)",
             TestLog::get());
 }
-TEST_F(BasicTransportTest, handlePacket_timeTraceFromServerUnknownSequence) {
+TEST_F(HomaTransportTest, handlePacket_timeTraceFromServerUnknownSequence) {
     handlePacket("mock:server=1",
-            BasicTransport::LogTimeTraceHeader(BasicTransport::RpcId(666, 1),
-            BasicTransport::FROM_SERVER));
+            HomaTransport::LogTimeTraceHeader(HomaTransport::RpcId(666, 1),
+            HomaTransport::FROM_SERVER));
     WorkerTimer::sync();
     EXPECT_TRUE(TestUtil::contains(TimeTrace::getTrace(),
             "client received LOG_TIME_TRACE"));
     EXPECT_EQ(0u, Driver::Received::stealCount);
 }
-TEST_F(BasicTransportTest, handlePacket_packetFromServerWithUnknownSequence) {
+TEST_F(HomaTransportTest, handlePacket_packetFromServerWithUnknownSequence) {
     handlePacket("mock:server=1",
-            BasicTransport::AllDataHeader(BasicTransport::RpcId(666, 1),
-            BasicTransport::FROM_SERVER, 9), "response1");
+            HomaTransport::AllDataHeader(HomaTransport::RpcId(666, 1),
+            HomaTransport::FROM_SERVER, 9), "response1");
     EXPECT_EQ("handlePacket: Discarding unknown packet, sequence 1",
             TestLog::get());
     EXPECT_EQ(0u, Driver::Received::stealCount);
 }
-TEST_F(BasicTransportTest, handlePacket_allDataFromServer_basics) {
+TEST_F(HomaTransportTest, handlePacket_allDataFromServer_basics) {
     MockWrapper wrapper("message1");
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
     handlePacket("mock:server=1",
-            BasicTransport::AllDataHeader(BasicTransport::RpcId(666, 1),
-            BasicTransport::FROM_SERVER, 9), "response1");
+            HomaTransport::AllDataHeader(HomaTransport::RpcId(666, 1),
+            HomaTransport::FROM_SERVER, 9), "response1");
     EXPECT_STREQ("completed: 1, failed: 0", wrapper.getState());
     EXPECT_EQ("response1", TestUtil::toString(&wrapper.response));
     EXPECT_EQ(0lu, transport.outgoingRpcs.size());
     EXPECT_EQ(1u, Driver::Received::stealCount);
 }
-TEST_F(BasicTransportTest, handlePacket_allDataFromServer_tooShort) {
+TEST_F(HomaTransportTest, handlePacket_allDataFromServer_tooShort) {
     MockWrapper wrapper("message1");
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
     handlePacket("mock:server=1",
-            BasicTransport::AllDataHeader(BasicTransport::RpcId(666, 1),
-            BasicTransport::FROM_SERVER, 10), "response1");
+            HomaTransport::AllDataHeader(HomaTransport::RpcId(666, 1),
+            HomaTransport::FROM_SERVER, 10), "response1");
     EXPECT_STREQ("completed: 0, failed: 0", wrapper.getState());
     EXPECT_EQ(1u, driver->releaseCount);
     EXPECT_EQ("handlePacket: ALL_DATA response from mock:server=1 too short "
             "(got 29 bytes, expected 30)",
             TestLog::get());
 }
-TEST_F(BasicTransportTest, handlePacket_dataFromServer_incompleteHeader) {
+TEST_F(HomaTransportTest, handlePacket_dataFromServer_incompleteHeader) {
     MockWrapper wrapper("message1");
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
     driver->outputLog.clear();
-    handlePacket("mock:server=1", BasicTransport::CommonHeader(
-            BasicTransport::DATA, BasicTransport::RpcId(666, 1),
-            BasicTransport::FROM_SERVER));
+    handlePacket("mock:server=1", HomaTransport::CommonHeader(
+            HomaTransport::DATA, HomaTransport::RpcId(666, 1),
+            HomaTransport::FROM_SERVER));
     EXPECT_EQ("handlePacket: packet of type DATA from mock:server=1 too "
             "short (18 bytes)", TestLog::get());
 }
-TEST_F(BasicTransportTest, handlePacket_dataFromServer_basics) {
+TEST_F(HomaTransportTest, handlePacket_dataFromServer_basics) {
     MockWrapper wrapper("message1");
     transport.maxDataPerPacket = 5;
     transport.roundTripBytes = 1000;
@@ -642,27 +714,27 @@ TEST_F(BasicTransportTest, handlePacket_dataFromServer_basics) {
 
     // First packet of response.
     handlePacket("mock:server=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(666, 1), 10, 0,
-            unscheduledBytes, BasicTransport::FROM_SERVER), "abcde");
+            HomaTransport::DataHeader(HomaTransport::RpcId(666, 1), 10, 0,
+            unscheduledBytes, HomaTransport::FROM_SERVER), "abcde");
     EXPECT_STREQ("completed: 0, failed: 0", wrapper.getState());
-    BasicTransport::ScheduledMessage* response = transport.messagesToGrant[0];
-    EXPECT_EQ(BasicTransport::RpcId(666, 1), response->rpcId);
-    EXPECT_EQ(1505u, response->grantOffset);
+    HomaTransport::ScheduledMessage* response = transport.messagesToGrant[0];
+    EXPECT_EQ(HomaTransport::RpcId(666, 1), response->rpcId);
+    EXPECT_EQ(10u, response->grantOffset);
     EXPECT_EQ("abcde", TestUtil::toString(&wrapper.response));
     EXPECT_EQ(1u, Driver::Received::stealCount);
 
     // Second packet of response
     driver->outputLog.clear();
     handlePacket("mock:server=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(666, 1), 10, 5,
-            unscheduledBytes, BasicTransport::FROM_SERVER), "12345");
+            HomaTransport::DataHeader(HomaTransport::RpcId(666, 1), 10, 5,
+            unscheduledBytes, HomaTransport::FROM_SERVER), "12345");
     EXPECT_STREQ("completed: 1, failed: 0", wrapper.getState());
     EXPECT_EQ("abcde12345", TestUtil::toString(&wrapper.response));
     EXPECT_EQ("", driver->outputLog);
     EXPECT_EQ(0lu, transport.outgoingRpcs.size());
     EXPECT_EQ(2u, Driver::Received::stealCount);
 }
-TEST_F(BasicTransportTest, handlePacket_dataFromServer_extraData) {
+TEST_F(HomaTransportTest, handlePacket_dataFromServer_extraData) {
     MockWrapper wrapper("message1");
     transport.maxDataPerPacket = 5;
     transport.roundTripBytes = 1000;
@@ -673,18 +745,18 @@ TEST_F(BasicTransportTest, handlePacket_dataFromServer_extraData) {
 
     // First packet of response.
     handlePacket("mock:server=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(666, 1), 6, 0,
-            unscheduledBytes, BasicTransport::FROM_SERVER), "abcde");
+            HomaTransport::DataHeader(HomaTransport::RpcId(666, 1), 6, 0,
+            unscheduledBytes, HomaTransport::FROM_SERVER), "abcde");
 
     // Final packet of response has extra data.
     driver->outputLog.clear();
     handlePacket("mock:server=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(666, 1), 6, 5,
-            unscheduledBytes, BasicTransport::FROM_SERVER), "12345");
+            HomaTransport::DataHeader(HomaTransport::RpcId(666, 1), 6, 5,
+            unscheduledBytes, HomaTransport::FROM_SERVER), "12345");
     EXPECT_STREQ("completed: 1, failed: 0", wrapper.getState());
     EXPECT_EQ("abcde1", TestUtil::toString(&wrapper.response));
 }
-TEST_F(BasicTransportTest, handlePacket_dataFromServer_dontIssueGrant) {
+TEST_F(HomaTransportTest, handlePacket_dataFromServer_dontIssueGrant) {
     MockWrapper wrapper("message1");
     transport.maxDataPerPacket = 5;
     transport.roundTripBytes = 1000;
@@ -695,19 +767,19 @@ TEST_F(BasicTransportTest, handlePacket_dataFromServer_dontIssueGrant) {
 
     // First packet of response; send a grant
     handlePacket("mock:server=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(666, 1), 15, 0,
-            unscheduledBytes, BasicTransport::FROM_SERVER), "abcde");
-    BasicTransport::ScheduledMessage* response = transport.messagesToGrant[0];
+            HomaTransport::DataHeader(HomaTransport::RpcId(666, 1), 15, 0,
+            unscheduledBytes, HomaTransport::FROM_SERVER), "abcde");
+    HomaTransport::ScheduledMessage* response = transport.messagesToGrant[0];
     EXPECT_EQ(666u, response->rpcId.clientId);
     EXPECT_EQ(1u, response->rpcId.sequence);
-    EXPECT_EQ(1505u, response->grantOffset);
+    EXPECT_EQ(15u, response->grantOffset);
 
     // Second packet of response (still not complete, but no need for
     // another grant).
     driver->outputLog.clear();
     handlePacket("mock:server=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(666, 1), 15,
-            10, unscheduledBytes, BasicTransport::FROM_SERVER),
+            HomaTransport::DataHeader(HomaTransport::RpcId(666, 1), 15,
+            10, unscheduledBytes, HomaTransport::FROM_SERVER),
             "12345");
     EXPECT_EQ("", driver->outputLog);
     EXPECT_EQ(1lu, transport.outgoingRpcs.size());
@@ -715,28 +787,28 @@ TEST_F(BasicTransportTest, handlePacket_dataFromServer_dontIssueGrant) {
     // Third packet of response (now complete)
     driver->outputLog.clear();
     handlePacket("mock:server=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(666, 1), 15, 5,
-            unscheduledBytes, BasicTransport::FROM_SERVER), "xyzzy");
+            HomaTransport::DataHeader(HomaTransport::RpcId(666, 1), 15, 5,
+            unscheduledBytes, HomaTransport::FROM_SERVER), "xyzzy");
     EXPECT_STREQ("completed: 1, failed: 0", wrapper.getState());
     EXPECT_EQ(0lu, transport.outgoingRpcs.size());
     EXPECT_EQ("abcdexyzzy12345", TestUtil::toString(&wrapper.response));
 }
-TEST_F(BasicTransportTest, handlePacket_grantFromServer_incompleteHeader) {
+TEST_F(HomaTransportTest, handlePacket_grantFromServer_incompleteHeader) {
     MockWrapper wrapper("message1");
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
     driver->outputLog.clear();
-    handlePacket("mock:server=1", BasicTransport::CommonHeader(
-            BasicTransport::GRANT, BasicTransport::RpcId(666, 1),
-            BasicTransport::FROM_SERVER));
+    handlePacket("mock:server=1", HomaTransport::CommonHeader(
+            HomaTransport::GRANT, HomaTransport::RpcId(666, 1),
+            HomaTransport::FROM_SERVER));
     EXPECT_EQ("handlePacket: packet of type GRANT from mock:server=1 too "
             "short (18 bytes)", TestLog::get());
 }
-TEST_F(BasicTransportTest, handlePacket_grantFromServer) {
+TEST_F(HomaTransportTest, handlePacket_grantFromServer) {
     MockWrapper wrapper("abcdefghij0123456789");
     transport.roundTripBytes = 10;
     transport.maxDataPerPacket = 10;
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
-    BasicTransport::ClientRpc* clientRpc = transport.outgoingRpcs[1];
+    HomaTransport::ClientRpc* clientRpc = transport.outgoingRpcs[1];
     EXPECT_EQ(10lu, clientRpc->request.transmitLimit);
 
     // Temporarily set topChoice to false to test the non-trivial code path.
@@ -744,42 +816,44 @@ TEST_F(BasicTransportTest, handlePacket_grantFromServer) {
     clientRpc->request.topChoice = false;
     // First grant doesn't get past transmitLimit.
     handlePacket("mock:server=1",
-            BasicTransport::GrantHeader(BasicTransport::RpcId(666, 1), 10,
-            BasicTransport::FROM_SERVER));
+            HomaTransport::GrantHeader(HomaTransport::RpcId(666, 1), 10, 1,
+            HomaTransport::FROM_SERVER));
     EXPECT_EQ(10lu, clientRpc->request.transmitLimit);
+    EXPECT_EQ(7u, clientRpc->request.transmitPriority);
     EXPECT_FALSE(transport.transmitDataSlowPath);
 
     // Second grant is far enough out to enable more bytes to be sent.
     handlePacket("mock:server=1",
-            BasicTransport::GrantHeader(BasicTransport::RpcId(666, 1), 15,
-            BasicTransport::FROM_SERVER));
+            HomaTransport::GrantHeader(HomaTransport::RpcId(666, 1), 15, 2,
+            HomaTransport::FROM_SERVER));
     EXPECT_EQ(15lu, clientRpc->request.transmitLimit);
+    EXPECT_EQ(2u, clientRpc->request.transmitPriority);
     EXPECT_TRUE(transport.transmitDataSlowPath);
     clientRpc->request.topChoice = true;
 }
-TEST_F(BasicTransportTest, handlePacket_logTimeTraceFromServer) {
+TEST_F(HomaTransportTest, handlePacket_logTimeTraceFromServer) {
     MockWrapper wrapper("message1");
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
     TimeTrace::reset();
 
-    handlePacket("mock:server=1", BasicTransport::LogTimeTraceHeader(
-            BasicTransport::RpcId(666, 1), BasicTransport::FROM_SERVER));
+    handlePacket("mock:server=1", HomaTransport::LogTimeTraceHeader(
+            HomaTransport::RpcId(666, 1), HomaTransport::FROM_SERVER));
     WorkerTimer::sync();
     EXPECT_TRUE(TestUtil::contains(TestLog::get(),
             "client received LOG_TIME_TRACE"));
 }
 
-TEST_F(BasicTransportTest, handlePacket_resendFromServer_incompleteHeader) {
+TEST_F(HomaTransportTest, handlePacket_resendFromServer_incompleteHeader) {
     MockWrapper wrapper("message1");
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
     driver->outputLog.clear();
-    handlePacket("mock:server=1", BasicTransport::CommonHeader(
-            BasicTransport::RESEND, BasicTransport::RpcId(666, 1),
-            BasicTransport::FROM_SERVER));
+    handlePacket("mock:server=1", HomaTransport::CommonHeader(
+            HomaTransport::RESEND, HomaTransport::RpcId(666, 1),
+            HomaTransport::FROM_SERVER));
     EXPECT_EQ("handlePacket: packet of type RESEND from mock:server=1 too "
             "short (18 bytes)", TestLog::get());
 }
-TEST_F(BasicTransportTest, handlePacket_resendFromServer_restart) {
+TEST_F(HomaTransportTest, handlePacket_resendFromServer_restart) {
     MockWrapper wrapper("abcdefghij0123456789");
     transport.roundTripBytes = 10;
     transport.maxDataPerPacket = 10;
@@ -789,24 +863,26 @@ TEST_F(BasicTransportTest, handlePacket_resendFromServer_restart) {
             "abcdefghij",
             driver->outputLog);
     driver->outputLog.clear();
-    BasicTransport::OutgoingMessage* request =
+    HomaTransport::OutgoingMessage* request =
             &transport.outgoingRpcs[1]->request;
     EXPECT_EQ(10u, request->transmitOffset);
 
-    handlePacket("mock:server=1", BasicTransport::ResendHeader(
-            BasicTransport::RpcId(666, 1), 0, 5,
-            BasicTransport::FROM_SERVER|BasicTransport::RESTART));
+    request->transmitPriority = 99u;
+    handlePacket("mock:server=1", HomaTransport::ResendHeader(
+            HomaTransport::RpcId(666, 1), 0, 5, 1,
+            HomaTransport::FROM_SERVER|HomaTransport::RESTART));
     EXPECT_EQ(0u, request->transmitOffset);
     EXPECT_EQ(5u, request->transmitLimit);
+    EXPECT_EQ(7u, request->transmitPriority);
     EXPECT_EQ(1u, transport.topOutgoingMessages.size());
 }
-TEST_F(BasicTransportTest,
+TEST_F(HomaTransportTest,
         handlePacket_resendFromServer_transmitLimitChanges) {
     MockWrapper wrapper("abcdefghij0123456789");
     transport.roundTripBytes = 10;
     transport.maxDataPerPacket = 10;
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
-    BasicTransport::OutgoingMessage* request =
+    HomaTransport::OutgoingMessage* request =
             &transport.outgoingRpcs[1]->request;
     EXPECT_EQ(10lu, request->transmitLimit);
     driver->outputLog.clear();
@@ -814,25 +890,27 @@ TEST_F(BasicTransportTest,
     transport.transmitDataSlowPath = false;
     bool topChoice = request->topChoice;
     request->topChoice = false;
-    handlePacket("mock:server=1", BasicTransport::ResendHeader(
-            BasicTransport::RpcId(666, 1), 10, 8, BasicTransport::FROM_SERVER));
+    handlePacket("mock:server=1", HomaTransport::ResendHeader(
+            HomaTransport::RpcId(666, 1), 10, 8, 99,
+            HomaTransport::FROM_SERVER));
     request->topChoice = topChoice;
     EXPECT_EQ("BUSY FROM_CLIENT, rpcId 666.1",
             driver->outputLog);
     EXPECT_EQ(18u, request->transmitLimit);
     EXPECT_EQ(10u, request->transmitOffset);
+    EXPECT_EQ(7u, request->transmitPriority);
     EXPECT_TRUE(transport.transmitDataSlowPath);
 }
-TEST_F(BasicTransportTest, handlePacket_resendFromServer_sendBusy) {
+TEST_F(HomaTransportTest, handlePacket_resendFromServer_sendBusy) {
     driver->transmitQueueSpace = 0;
     MockWrapper wrapper("abcdefghij0123456789");
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
     driver->outputLog.clear();
 
     // Case 1: data hasn't actually been transmitted yet.
-    handlePacket("mock:server=1", BasicTransport::ResendHeader(
-            BasicTransport::RpcId(666, 1), 0, 10,
-            BasicTransport::FROM_SERVER));
+    handlePacket("mock:server=1", HomaTransport::ResendHeader(
+            HomaTransport::RpcId(666, 1), 0, 10, 1,
+            HomaTransport::FROM_SERVER));
     EXPECT_EQ("BUSY FROM_CLIENT, rpcId 666.1", driver->outputLog);
 
     // Case 2: data was sent shortly before RESEND arrived.
@@ -841,13 +919,13 @@ TEST_F(BasicTransportTest, handlePacket_resendFromServer_sendBusy) {
     transport.tryToTransmitData();
     driver->outputLog.clear();
     Cycles::mockTscValue += transport.timerInterval - 10;
-    handlePacket("mock:server=1", BasicTransport::ResendHeader(
-            BasicTransport::RpcId(666, 1), 0, 10,
-            BasicTransport::FROM_SERVER));
+    handlePacket("mock:server=1", HomaTransport::ResendHeader(
+            HomaTransport::RpcId(666, 1), 0, 10, 1,
+            HomaTransport::FROM_SERVER));
     EXPECT_EQ("BUSY FROM_CLIENT, rpcId 666.1", driver->outputLog);
     Cycles::mockTscValue = 0;
 }
-TEST_F(BasicTransportTest, handlePacket_resendFromServer_resend) {
+TEST_F(HomaTransportTest, handlePacket_resendFromServer_resend) {
     Cycles::mockTscValue = 1000000;
     transport.timerInterval = 1000;
     MockWrapper wrapper("abcdefghij0123456789");
@@ -855,69 +933,69 @@ TEST_F(BasicTransportTest, handlePacket_resendFromServer_resend) {
     driver->outputLog.clear();
 
     Cycles::mockTscValue += transport.timerInterval + 10;
-    handlePacket("mock:server=1", BasicTransport::ResendHeader(
-            BasicTransport::RpcId(666, 1), 12, 20,
-            BasicTransport::FROM_SERVER));
+    handlePacket("mock:server=1", HomaTransport::ResendHeader(
+            HomaTransport::RpcId(666, 1), 12, 20, 1,
+            HomaTransport::FROM_SERVER));
     EXPECT_EQ("DATA FROM_CLIENT, rpcId 666.1, totalLength 20, offset 12, "
             "RETRANSMISSION 23456789",
             driver->outputLog);
     EXPECT_EQ(1001010lu, transport.outgoingRpcs[1]->request.lastTransmitTime);
     Cycles::mockTscValue = 0;
 }
-TEST_F(BasicTransportTest, handlePacket_busyFromServer) {
+TEST_F(HomaTransportTest, handlePacket_busyFromServer) {
     MockWrapper wrapper("message1");
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
     driver->outputLog.clear();
     transport.outgoingRpcs[1]->silentIntervals = 2;
-    handlePacket("mock:server=1", BasicTransport::BusyHeader(
-            BasicTransport::RpcId(666, 1), BasicTransport::FROM_SERVER));
+    handlePacket("mock:server=1", HomaTransport::BusyHeader(
+            HomaTransport::RpcId(666, 1), HomaTransport::FROM_SERVER));
     EXPECT_EQ(0u, transport.outgoingRpcs[1]->silentIntervals);
 }
-TEST_F(BasicTransportTest, handlePacket_unknownOpcodeFromServer) {
+TEST_F(HomaTransportTest, handlePacket_unknownOpcodeFromServer) {
     MockWrapper wrapper("message1");
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
     driver->outputLog.clear();
-    handlePacket("mock:server=1", BasicTransport::CommonHeader(
-            BasicTransport::BOGUS, BasicTransport::RpcId(666, 1),
-            BasicTransport::FROM_SERVER));
+    handlePacket("mock:server=1", HomaTransport::CommonHeader(
+            HomaTransport::BOGUS, HomaTransport::RpcId(666, 1),
+            HomaTransport::FROM_SERVER));
     EXPECT_EQ("handlePacket: unexpected opcode 27 received from "
             "server mock:server=1", TestLog::get());
 }
-TEST_F(BasicTransportTest, handlePacket_allDataFromClient) {
+TEST_F(HomaTransportTest, handlePacket_allDataFromClient) {
     handlePacket("mock:client=1",
-            BasicTransport::AllDataHeader(BasicTransport::RpcId(100, 101),
-            BasicTransport::FROM_CLIENT, 8), "message1");
-    BasicTransport::ServerRpc* serverRpc =
-            static_cast<BasicTransport::ServerRpc*>(
+            HomaTransport::AllDataHeader(HomaTransport::RpcId(100, 101),
+            HomaTransport::FROM_CLIENT, 8), "message1");
+    HomaTransport::ServerRpc* serverRpc =
+            static_cast<HomaTransport::ServerRpc*>(
             context.workerManager->waitForRpc(0));
     ASSERT_TRUE(serverRpc != NULL);
     EXPECT_EQ("message1", TestUtil::toString(&serverRpc->requestPayload));
     EXPECT_TRUE(serverRpc->requestComplete);
     EXPECT_EQ(2u, transport.nextServerSequenceNumber);
 }
-TEST_F(BasicTransportTest, handlePacket_allDataFromClient_duplicate) {
+TEST_F(HomaTransportTest, handlePacket_allDataFromClient_duplicate) {
     handlePacket("mock:client=1",
-            BasicTransport::AllDataHeader(BasicTransport::RpcId(100, 101),
-            BasicTransport::FROM_CLIENT, 8), "message1");
-    BasicTransport::ServerRpc* serverRpc =
-            static_cast<BasicTransport::ServerRpc*>(
+            HomaTransport::AllDataHeader(HomaTransport::RpcId(100, 101),
+            HomaTransport::FROM_CLIENT, 8), "message1");
+    HomaTransport::ServerRpc* serverRpc =
+            static_cast<HomaTransport::ServerRpc*>(
             context.workerManager->waitForRpc(0));
     ASSERT_TRUE(serverRpc != NULL);
     handlePacket("mock:client=1",
-            BasicTransport::AllDataHeader(BasicTransport::RpcId(100, 101),
-            BasicTransport::FROM_CLIENT, 20), "0123457890abcdefghij");
+            HomaTransport::AllDataHeader(HomaTransport::RpcId(100, 101),
+            HomaTransport::FROM_CLIENT, 20), "0123457890abcdefghij");
     EXPECT_EQ("message1", TestUtil::toString(&serverRpc->requestPayload));
 }
-TEST_F(BasicTransportTest, handlePacket_allDataFromClient_tooShort) {
+TEST_F(HomaTransportTest, handlePacket_allDataFromClient_tooShort) {
     handlePacket("mock:client=1",
-            BasicTransport::AllDataHeader(BasicTransport::RpcId(100, 101),
-            BasicTransport::FROM_CLIENT, 9), "message1");
+            HomaTransport::AllDataHeader(HomaTransport::RpcId(100, 101),
+            HomaTransport::FROM_CLIENT, 9), "message1");
     EXPECT_EQ(1u, driver->releaseCount);
     EXPECT_EQ("handlePacket: ALL_DATA request from mock:client=1 too short "
             "(got 28 bytes, expected 29)",
             TestLog::get());
 }
-TEST_F(BasicTransportTest, handlePacket_dataFromClient_basics) {
+TEST_F(HomaTransportTest, handlePacket_dataFromClient_basics) {
     // Send a message in three packets. The first packet should result
     // in a GRANT.
     transport.roundTripBytes = 1000;
@@ -925,27 +1003,27 @@ TEST_F(BasicTransportTest, handlePacket_dataFromClient_basics) {
     transport.grantIncrement = 500;
     uint32_t unscheduledBytes = 10;
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 15,
-            5, unscheduledBytes, BasicTransport::FROM_CLIENT),
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 15,
+            5, unscheduledBytes, HomaTransport::FROM_CLIENT),
             "56789");
-    BasicTransport::ServerRpcMap::iterator it = transport.incomingRpcs.find(
-            BasicTransport::RpcId(100, 101));
+    HomaTransport::ServerRpcMap::iterator it = transport.incomingRpcs.find(
+            HomaTransport::RpcId(100, 101));
     ASSERT_TRUE(it != transport.incomingRpcs.end());
-    BasicTransport::ServerRpc* serverRpc = it->second;
+    HomaTransport::ServerRpc* serverRpc = it->second;
     EXPECT_FALSE(serverRpc->requestComplete);
-    BasicTransport::ScheduledMessage* response = transport.messagesToGrant[0];
-    EXPECT_EQ(BasicTransport::RpcId(100, 101), response->rpcId);
-    EXPECT_EQ(1500u, response->grantOffset);
+    HomaTransport::ScheduledMessage* response = transport.messagesToGrant[0];
+    EXPECT_EQ(HomaTransport::RpcId(100, 101), response->rpcId);
+    EXPECT_EQ(15u, response->grantOffset);
     EXPECT_EQ(2u, transport.nextServerSequenceNumber);
 
     // Second packet: no GRANT should result.
     driver->outputLog.clear();
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 15,
-            0, unscheduledBytes, BasicTransport::FROM_CLIENT),
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 15,
+            0, unscheduledBytes, HomaTransport::FROM_CLIENT),
             "01234");
     EXPECT_FALSE(serverRpc->requestComplete);
-    EXPECT_EQ(1500u, serverRpc->scheduledMessage->grantOffset);
+    EXPECT_EQ(15u, serverRpc->scheduledMessage->grantOffset);
     EXPECT_EQ("", driver->outputLog);
     EXPECT_EQ(1lu, transport.incomingRpcs.size());
     EXPECT_EQ(1lu, transport.serverTimerList.size());
@@ -953,14 +1031,14 @@ TEST_F(BasicTransportTest, handlePacket_dataFromClient_basics) {
     // Third packet: no GRANT, message should now be complete.
     driver->outputLog.clear();
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 15, 10,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "abcde");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 15, 10,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
     EXPECT_TRUE(serverRpc->requestComplete);
     EXPECT_EQ("", driver->outputLog);
     EXPECT_EQ("0123456789abcde",
             TestUtil::toString(&serverRpc->requestPayload));
 }
-TEST_F(BasicTransportTest, handlePacket_dataFromClient_extraBytes) {
+TEST_F(HomaTransportTest, handlePacket_dataFromClient_extraBytes) {
     // Send a message in two packets; the second packet contains more
     // than enough data to complete the message.
     transport.roundTripBytes = 1000;
@@ -968,60 +1046,60 @@ TEST_F(BasicTransportTest, handlePacket_dataFromClient_extraBytes) {
     transport.grantIncrement = 500;
     uint32_t unscheduledBytes = transport.roundTripBytes;
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 6,
-            0, unscheduledBytes, BasicTransport::FROM_CLIENT),
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 6,
+            0, unscheduledBytes, HomaTransport::FROM_CLIENT),
             "abcde");
-    BasicTransport::ServerRpcMap::iterator it = transport.incomingRpcs.find(
-            BasicTransport::RpcId(100, 101));
+    HomaTransport::ServerRpcMap::iterator it = transport.incomingRpcs.find(
+            HomaTransport::RpcId(100, 101));
     ASSERT_TRUE(it != transport.incomingRpcs.end());
-    BasicTransport::ServerRpc* serverRpc = it->second;
+    HomaTransport::ServerRpc* serverRpc = it->second;
     EXPECT_FALSE(serverRpc->requestComplete);
 
     // Second packet.
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 6,
-            5, unscheduledBytes, BasicTransport::FROM_CLIENT),
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 6,
+            5, unscheduledBytes, HomaTransport::FROM_CLIENT),
             "01234");
     EXPECT_TRUE(serverRpc->requestComplete);
     EXPECT_EQ("abcde0",
             TestUtil::toString(&serverRpc->requestPayload));
 }
-TEST_F(BasicTransportTest, handlePacket_dataFromClient_dontIssueGrant) {
+TEST_F(HomaTransportTest, handlePacket_dataFromClient_dontIssueGrant) {
     transport.roundTripBytes = 1000;
     transport.grantIncrement = 500;
     uint32_t unscheduledBytes = transport.roundTripBytes;
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 15, 10,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "abcde");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 15, 10,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
     EXPECT_EQ("", driver->outputLog);
 }
-TEST_F(BasicTransportTest, handlePacket_dataFromClient_extraneousPacket) {
+TEST_F(HomaTransportTest, handlePacket_dataFromClient_extraneousPacket) {
     // Send an extra packet after the message is complete.
     handlePacket("mock:client=1",
-            BasicTransport::AllDataHeader(BasicTransport::RpcId(100, 101),
-            BasicTransport::FROM_CLIENT, 8), "message1");
+            HomaTransport::AllDataHeader(HomaTransport::RpcId(100, 101),
+            HomaTransport::FROM_CLIENT, 8), "message1");
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 13,
-            8, 1000, BasicTransport::FROM_CLIENT),
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 13,
+            8, 1000, HomaTransport::FROM_CLIENT),
             "abcde");
     EXPECT_EQ("handlePacket: ignoring extraneous packet | "
               "handlePacket: Redundant DATA from client, clientId 100, "
               "sequence 101, offset 8, totalLength 13", TestLog::get());
-    BasicTransport::ServerRpc* serverRpc =
-            dynamic_cast<BasicTransport::ServerRpc*>(
+    HomaTransport::ServerRpc* serverRpc =
+            dynamic_cast<HomaTransport::ServerRpc*>(
             context.workerManager->waitForRpc(0));
     EXPECT_TRUE(serverRpc != NULL);
     EXPECT_EQ("message1", TestUtil::toString(&serverRpc->requestPayload));
 }
-TEST_F(BasicTransportTest, handlePacket_grantFromClient_bogusGrants) {
+TEST_F(HomaTransportTest, handlePacket_grantFromClient_bogusGrants) {
     prepareToRespond();
     transport.roundTripBytes = 5;
     transport.maxDataPerPacket = 5;
 
     // GRANT arriving for unknown RpcID: bogus.
     handlePacket("mock:client=1",
-            BasicTransport::GrantHeader(BasicTransport::RpcId(5, 6), 10,
-            BasicTransport::FROM_CLIENT));
+            HomaTransport::GrantHeader(HomaTransport::RpcId(5, 6), 10, 1,
+            HomaTransport::FROM_CLIENT));
     EXPECT_EQ("handlePacket: unexpected GRANT from client mock:client=1, "
             "id (5,6), grantOffset 10, serverRpc not found",
             TestLog::get());
@@ -1029,24 +1107,24 @@ TEST_F(BasicTransportTest, handlePacket_grantFromClient_bogusGrants) {
     // GRANT arriving before result transmission starts: bogus.
     TestLog::reset();
     handlePacket("mock:client=1",
-            BasicTransport::GrantHeader(BasicTransport::RpcId(100, 101), 10,
-            BasicTransport::FROM_CLIENT));
+            HomaTransport::GrantHeader(HomaTransport::RpcId(100, 101), 10, 1,
+            HomaTransport::FROM_CLIENT));
     EXPECT_EQ("handlePacket: unexpected GRANT from client mock:client=1, "
             "id (100,101), grantOffset 10, serverRpc not sending response",
             TestLog::get());
 
     // GRANT packet too short: bogus.
     TestLog::reset();
-    handlePacket("mock:client=1", BasicTransport::CommonHeader(
-            BasicTransport::GRANT, BasicTransport::RpcId(100, 101),
-            BasicTransport::FROM_CLIENT));
+    handlePacket("mock:client=1", HomaTransport::CommonHeader(
+            HomaTransport::GRANT, HomaTransport::RpcId(100, 101),
+            HomaTransport::FROM_CLIENT));
     EXPECT_EQ("handlePacket: packet of type GRANT from mock:client=1 "
             "too short (18 bytes)", TestLog::get());
 }
-TEST_F(BasicTransportTest, handlePacket_grantFromClient) {
+TEST_F(HomaTransportTest, handlePacket_grantFromClient) {
     transport.roundTripBytes = 5;
     transport.maxDataPerPacket = 5;
-    BasicTransport::ServerRpc* serverRpc = prepareToRespond();
+    HomaTransport::ServerRpc* serverRpc = prepareToRespond();
     serverRpc->sendReply();
     EXPECT_EQ("DATA FROM_SERVER, rpcId 100.101, totalLength 20, offset 0 "
             "01234",
@@ -1055,16 +1133,17 @@ TEST_F(BasicTransportTest, handlePacket_grantFromClient) {
 
     // First, send redundant grant (do nothing).
     handlePacket("mock:client=1",
-            BasicTransport::GrantHeader(BasicTransport::RpcId(100, 101), 5,
-            BasicTransport::FROM_CLIENT));
+            HomaTransport::GrantHeader(HomaTransport::RpcId(100, 101), 5, 99,
+            HomaTransport::FROM_CLIENT));
     transport.tryToTransmitData();
     EXPECT_EQ("", driver->outputLog);
     EXPECT_EQ(5u, serverRpc->response.transmitLimit);
+    EXPECT_EQ(7u, serverRpc->response.transmitPriority);
 
     // Second grant should allow more data to be transmitted.
     handlePacket("mock:client=1",
-            BasicTransport::GrantHeader(BasicTransport::RpcId(100, 101), 15,
-            BasicTransport::FROM_CLIENT));
+            HomaTransport::GrantHeader(HomaTransport::RpcId(100, 101), 15, 1,
+            HomaTransport::FROM_CLIENT));
     transport.tryToTransmitData();
     EXPECT_EQ("DATA FROM_SERVER, rpcId 100.101, totalLength 20, offset 5 "
             "56789 | "
@@ -1072,13 +1151,15 @@ TEST_F(BasicTransportTest, handlePacket_grantFromClient) {
             "abcde",
             driver->outputLog);
     EXPECT_EQ(15u, serverRpc->response.transmitLimit);
+    EXPECT_EQ(1u, serverRpc->response.transmitPriority);
 
     // Third grant should complete the result transmission.
     driver->outputLog.clear();
     handlePacket("mock:client=1",
-            BasicTransport::GrantHeader(BasicTransport::RpcId(100, 101), 25,
-            BasicTransport::FROM_CLIENT));
+            HomaTransport::GrantHeader(HomaTransport::RpcId(100, 101), 25, 2,
+            HomaTransport::FROM_CLIENT));
     EXPECT_EQ(20u, serverRpc->response.transmitLimit);
+    EXPECT_EQ(2u, serverRpc->response.transmitPriority);
     transport.tryToTransmitData();
     EXPECT_EQ("DATA FROM_SERVER, rpcId 100.101, totalLength 20, offset 15 "
             "fghij",
@@ -1087,30 +1168,30 @@ TEST_F(BasicTransportTest, handlePacket_grantFromClient) {
     EXPECT_EQ(0lu, transport.serverTimerList.size());
     EXPECT_EQ(0lu, transport.serverRpcPool.outstandingAllocations);
 }
-TEST_F(BasicTransportTest, handlePacket_resendFromClient_packetTooShort) {
+TEST_F(HomaTransportTest, handlePacket_resendFromClient_packetTooShort) {
     prepareToRespond();
     transport.roundTripBytes = 5;
     transport.maxDataPerPacket = 5;
     TestLog::reset();
-    handlePacket("mock:client=1", BasicTransport::CommonHeader(
-            BasicTransport::RESEND, BasicTransport::RpcId(100, 101),
-            BasicTransport::FROM_CLIENT));
+    handlePacket("mock:client=1", HomaTransport::CommonHeader(
+            HomaTransport::RESEND, HomaTransport::RpcId(100, 101),
+            HomaTransport::FROM_CLIENT));
     EXPECT_TRUE(TestUtil::contains(TestLog::get(),
             "handlePacket: packet of type RESEND from mock:client=1 "
             "too short (18 bytes)"));
 }
-TEST_F(BasicTransportTest, handlePacket_resendFromClient_unknownRpcId) {
+TEST_F(HomaTransportTest, handlePacket_resendFromClient_unknownRpcId) {
     handlePacket("mock:client=1",
-            BasicTransport::ResendHeader(BasicTransport::RpcId(10, 11),
-            10, 5, BasicTransport::FROM_CLIENT));
+            HomaTransport::ResendHeader(HomaTransport::RpcId(10, 11),
+            10, 5, 1, HomaTransport::FROM_CLIENT));
     EXPECT_EQ("RESEND FROM_SERVER, rpcId 10.11, offset 0, length 10960, "
-            "RESTART", driver->outputLog);
+            "priority 0, RESTART", driver->outputLog);
 }
-TEST_F(BasicTransportTest,
+TEST_F(HomaTransportTest,
         handlePacket_resendFromClient_transmitLimitChanges) {
     transport.roundTripBytes = 15;
     transport.maxDataPerPacket = 15;
-    BasicTransport::ServerRpc* serverRpc = prepareToRespond();
+    HomaTransport::ServerRpc* serverRpc = prepareToRespond();
     serverRpc->sendReply();
 
     driver->outputLog.clear();
@@ -1118,24 +1199,24 @@ TEST_F(BasicTransportTest,
     bool topChoice = serverRpc->response.topChoice;
     serverRpc->response.topChoice = false;
     handlePacket("mock:client=1",
-            BasicTransport::ResendHeader(BasicTransport::RpcId(100, 101),
-            15, 8, BasicTransport::FROM_CLIENT));
+            HomaTransport::ResendHeader(HomaTransport::RpcId(100, 101),
+            15, 8, 1, HomaTransport::FROM_CLIENT));
     serverRpc->response.topChoice = topChoice;
     EXPECT_EQ("BUSY FROM_SERVER, rpcId 100.101", driver->outputLog);
     EXPECT_EQ(15u, serverRpc->response.transmitOffset);
     EXPECT_EQ(20u, serverRpc->response.transmitLimit);
     EXPECT_TRUE(transport.transmitDataSlowPath);
 }
-TEST_F(BasicTransportTest, handlePacket_resendFromClient_sendBusy) {
+TEST_F(HomaTransportTest, handlePacket_resendFromClient_sendBusy) {
     driver->transmitQueueSpace = 0;
     transport.roundTripBytes = 15;
     transport.maxDataPerPacket = 15;
-    BasicTransport::ServerRpc* serverRpc = prepareToRespond();
+    HomaTransport::ServerRpc* serverRpc = prepareToRespond();
 
     // Case 1: sendReply hasn't been called yet
     handlePacket("mock:client=1",
-            BasicTransport::ResendHeader(BasicTransport::RpcId(100, 101),
-            10, 5, BasicTransport::FROM_CLIENT));
+            HomaTransport::ResendHeader(HomaTransport::RpcId(100, 101),
+            10, 5, 1, HomaTransport::FROM_CLIENT));
     EXPECT_EQ("BUSY FROM_SERVER, rpcId 100.101",
             driver->outputLog);
 
@@ -1143,8 +1224,8 @@ TEST_F(BasicTransportTest, handlePacket_resendFromClient_sendBusy) {
     driver->outputLog.clear();
     serverRpc->sendReply();
     handlePacket("mock:client=1",
-            BasicTransport::ResendHeader(BasicTransport::RpcId(100, 101),
-            5, 8, BasicTransport::FROM_CLIENT));
+            HomaTransport::ResendHeader(HomaTransport::RpcId(100, 101),
+            5, 8, 1, HomaTransport::FROM_CLIENT));
     EXPECT_EQ("BUSY FROM_SERVER, rpcId 100.101",
             driver->outputLog);
 
@@ -1155,84 +1236,84 @@ TEST_F(BasicTransportTest, handlePacket_resendFromClient_sendBusy) {
     driver->outputLog.clear();
     Cycles::mockTscValue += transport.timerInterval - 10;
     handlePacket("mock:client=1",
-            BasicTransport::ResendHeader(BasicTransport::RpcId(100, 101),
-            5, 8, BasicTransport::FROM_CLIENT));
+            HomaTransport::ResendHeader(HomaTransport::RpcId(100, 101),
+            5, 8, 1, HomaTransport::FROM_CLIENT));
     EXPECT_EQ("BUSY FROM_SERVER, rpcId 100.101",
             driver->outputLog);
     Cycles::mockTscValue = 0;
 }
-TEST_F(BasicTransportTest, handlePacket_resendFromClient_sendBytes) {
+TEST_F(HomaTransportTest, handlePacket_resendFromClient_sendBytes) {
     Cycles::mockTscValue = 1000000;
     transport.timerInterval = 1000;
     transport.roundTripBytes = 15;
     transport.maxDataPerPacket = 15;
-    BasicTransport::ServerRpc* serverRpc = prepareToRespond();
+    HomaTransport::ServerRpc* serverRpc = prepareToRespond();
     serverRpc->sendReply();
 
     driver->outputLog.clear();
     Cycles::mockTscValue += transport.timerInterval + 10;
     handlePacket("mock:client=1",
-            BasicTransport::ResendHeader(BasicTransport::RpcId(100, 101),
-            5, 8, BasicTransport::FROM_CLIENT));
+            HomaTransport::ResendHeader(HomaTransport::RpcId(100, 101),
+            5, 8, 1, HomaTransport::FROM_CLIENT));
     EXPECT_EQ("DATA FROM_SERVER, rpcId 100.101, totalLength 20, offset 5, "
             "RETRANSMISSION 56789abc",
             driver->outputLog);
     EXPECT_EQ(1001010lu, serverRpc->response.lastTransmitTime);
     Cycles::mockTscValue = 0;
 }
-TEST_F(BasicTransportTest, handlePacket_busyFromClient) {
-    BasicTransport::ServerRpc* serverRpc = prepareToRespond();
+TEST_F(HomaTransportTest, handlePacket_busyFromClient) {
+    HomaTransport::ServerRpc* serverRpc = prepareToRespond();
     serverRpc->silentIntervals = 2;
-    handlePacket("mock:client=1", BasicTransport::BusyHeader(
-            BasicTransport::RpcId(100, 101), BasicTransport::FROM_CLIENT));
+    handlePacket("mock:client=1", HomaTransport::BusyHeader(
+            HomaTransport::RpcId(100, 101), HomaTransport::FROM_CLIENT));
     EXPECT_EQ(0u, serverRpc->silentIntervals);
 }
-TEST_F(BasicTransportTest, handlePacket_abortFromClient_sendingResponse) {
+TEST_F(HomaTransportTest, handlePacket_abortFromClient_sendingResponse) {
     // Cancel a ServerRpc that is sending response.
     driver->transmitQueueSpace = 0;
-    BasicTransport::ServerRpc* serverRpc = prepareToRespond();
+    HomaTransport::ServerRpc* serverRpc = prepareToRespond();
     serverRpc->sendReply();
     EXPECT_EQ(1u, transport.incomingRpcs.size());
-    handlePacket("mock:client=1", BasicTransport::AbortHeader(
-            BasicTransport::RpcId(100, 101)));
+    handlePacket("mock:client=1", HomaTransport::AbortHeader(
+            HomaTransport::RpcId(100, 101)));
     EXPECT_EQ(0u, transport.incomingRpcs.size());
 }
-TEST_F(BasicTransportTest, handlePacket_abortFromClient_localExecution) {
+TEST_F(HomaTransportTest, handlePacket_abortFromClient_localExecution) {
     // Cancel a ServerRpc that is being executed locally.
-    BasicTransport::ServerRpc* serverRpc = prepareToRespond();
+    HomaTransport::ServerRpc* serverRpc = prepareToRespond();
     EXPECT_EQ(1u, transport.incomingRpcs.size());
-    handlePacket("mock:client=1", BasicTransport::AbortHeader(
-            BasicTransport::RpcId(100, 101)));
+    handlePacket("mock:client=1", HomaTransport::AbortHeader(
+            HomaTransport::RpcId(100, 101)));
     EXPECT_TRUE(serverRpc->cancelled);
     serverRpc->sendReply();
     EXPECT_EQ("", driver->outputLog);
     EXPECT_EQ(0u, transport.incomingRpcs.size());
 }
-TEST_F(BasicTransportTest, handlePacket_unknownOpcodeFromClient) {
-    handlePacket("mock:client=1", BasicTransport::CommonHeader(
-            BasicTransport::BOGUS, BasicTransport::RpcId(100, 101),
-            BasicTransport::FROM_CLIENT));
+TEST_F(HomaTransportTest, handlePacket_unknownOpcodeFromClient) {
+    handlePacket("mock:client=1", HomaTransport::CommonHeader(
+            HomaTransport::BOGUS, HomaTransport::RpcId(100, 101),
+            HomaTransport::FROM_CLIENT));
     EXPECT_EQ("handlePacket: unexpected opcode 27 received from client "
             "mock:client=1", TestLog::get());
 }
 
-TEST_F(BasicTransportTest, sendReply_basics) {
+TEST_F(HomaTransportTest, sendReply_basics) {
     transport.roundTripBytes = 10;
     transport.maxDataPerPacket = 10;
-    BasicTransport::ServerRpc* serverRpc = prepareToRespond();
+    HomaTransport::ServerRpc* serverRpc = prepareToRespond();
     serverRpc->sendReply();
     EXPECT_EQ(10lu, serverRpc->response.transmitLimit);
     EXPECT_EQ(1lu, transport.outgoingResponses.size());
     EXPECT_EQ(1lu, transport.serverTimerList.size());
     EXPECT_EQ(1u, transport.topOutgoingMessages.size());
 }
-TEST_F(BasicTransportTest, sendReply_smallMessage) {
+TEST_F(HomaTransportTest, sendReply_smallMessage) {
     // Small messages are passed to the NIC directly, bypassing the
     // sender's congestion control mechanism in tryToTransmitData.
     driver->transmitQueueSpace = -1;
     transport.smallMessageThreshold = 10;
-    BasicTransport::ServerRpc* serverRpc1 = prepareToRespond();
-    BasicTransport::ServerRpc* serverRpc2 =
+    HomaTransport::ServerRpc* serverRpc1 = prepareToRespond();
+    HomaTransport::ServerRpc* serverRpc2 =
             prepareToRespond(102, 9, "012345678");
     serverRpc1->sendReply();
     serverRpc2->sendReply();
@@ -1241,20 +1322,20 @@ TEST_F(BasicTransportTest, sendReply_smallMessage) {
             driver->outputLog);
 }
 
-TEST_F(BasicTransportTest, MessageAccumulator_destructor) {
+TEST_F(HomaTransportTest, MessageAccumulator_destructor) {
     transport.maxDataPerPacket = 5;
     uint32_t unscheduledBytes = transport.roundTripBytes;
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 25, 10,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "abcde");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 25, 10,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 25, 20,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "56789");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 25, 20,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "56789");
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 25, 15,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "01234");
-    BasicTransport::ServerRpc* serverRpc =
-            transport.incomingRpcs[BasicTransport::RpcId(100, 101)];
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 25, 15,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "01234");
+    HomaTransport::ServerRpc* serverRpc =
+            transport.incomingRpcs[HomaTransport::RpcId(100, 101)];
     EXPECT_TRUE(serverRpc->accumulator);
     EXPECT_EQ(3u, serverRpc->accumulator->fragments.size());
     EXPECT_EQ(0u, driver->releaseCount);
@@ -1262,164 +1343,164 @@ TEST_F(BasicTransportTest, MessageAccumulator_destructor) {
     EXPECT_EQ(3u, driver->releaseCount);
 }
 
-TEST_F(BasicTransportTest, addPacket_basics) {
+TEST_F(HomaTransportTest, addPacket_basics) {
     // Receive a request in 5 packets, in the order P4, P2, P0, P1, P3.
     transport.maxDataPerPacket = 5;
     uint32_t unscheduledBytes = transport.roundTripBytes;
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 25, 20,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "P4444");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 25, 20,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "P4444");
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 25, 10,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "P2222");
-    BasicTransport::ServerRpcMap::iterator it =
-            transport.incomingRpcs.find(BasicTransport::RpcId(100, 101));
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 25, 10,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "P2222");
+    HomaTransport::ServerRpcMap::iterator it =
+            transport.incomingRpcs.find(HomaTransport::RpcId(100, 101));
     ASSERT_TRUE(it != transport.incomingRpcs.end());
-    BasicTransport::ServerRpc* serverRpc = it->second;
+    HomaTransport::ServerRpc* serverRpc = it->second;
     ASSERT_TRUE(serverRpc->accumulator);
     EXPECT_EQ(2u, serverRpc->accumulator->fragments.size());
     EXPECT_EQ(2u, Driver::Received::stealCount);
 
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 25, 0,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "P0000");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 25, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "P0000");
     EXPECT_EQ(2u, serverRpc->accumulator->fragments.size());
     EXPECT_EQ("P0000",
             TestUtil::toString(&serverRpc->requestPayload));
 
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 25, 5,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "P1111");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 25, 5,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "P1111");
     EXPECT_EQ(1u, serverRpc->accumulator->fragments.size());
     EXPECT_EQ("P0000P1111P2222",
             TestUtil::toString(&serverRpc->requestPayload));
 
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 25, 15,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "P3333");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 25, 15,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "P3333");
     EXPECT_EQ(0u, serverRpc->accumulator->fragments.size());
     EXPECT_EQ("P0000P1111P2222P3333P4444",
             TestUtil::toString(&serverRpc->requestPayload));
     EXPECT_EQ(5u, Driver::Received::stealCount);
 }
-TEST_F(BasicTransportTest, addPacket_skipRedundantPacket) {
+TEST_F(HomaTransportTest, addPacket_skipRedundantPacket) {
     // Receive two duplicate packets that contain bytes 10-14.
     transport.maxDataPerPacket = 5;
     uint32_t unscheduledBytes = transport.roundTripBytes;
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 15, 10,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "abcde");
-    BasicTransport::ServerRpcMap::iterator it =
-            transport.incomingRpcs.find(BasicTransport::RpcId(100, 101));
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 15, 10,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ServerRpcMap::iterator it =
+            transport.incomingRpcs.find(HomaTransport::RpcId(100, 101));
     ASSERT_TRUE(it != transport.incomingRpcs.end());
-    BasicTransport::ServerRpc* serverRpc = it->second;
+    HomaTransport::ServerRpc* serverRpc = it->second;
     EXPECT_EQ(1u, serverRpc->accumulator->fragments.size());
     EXPECT_EQ(1u, Driver::Received::stealCount);
     EXPECT_EQ(0u, driver->releaseCount);
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 15, 10,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "abcde");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 15, 10,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
     EXPECT_EQ(1u, serverRpc->accumulator->fragments.size());
     EXPECT_EQ(1u, Driver::Received::stealCount);
     EXPECT_EQ(1u, driver->releaseCount);
 
     // Receive another two duplicate packets that contain bytes 0-4.
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 15, 0,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "01234");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 15, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "01234");
     EXPECT_EQ(1u, serverRpc->accumulator->fragments.size());
     EXPECT_EQ(2u, Driver::Received::stealCount);
     EXPECT_EQ(1u, driver->releaseCount);
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 15, 0,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "01234");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 15, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "01234");
     EXPECT_EQ(1u, serverRpc->accumulator->fragments.size());
     EXPECT_EQ(2u, Driver::Received::stealCount);
     EXPECT_EQ(2u, driver->releaseCount);
 }
 
-TEST_F(BasicTransportTest, requestRetransmission) {
+TEST_F(HomaTransportTest, requestRetransmission) {
     transport.roundTripBytes = 100;
     transport.maxDataPerPacket = 5;
     uint32_t unscheduledBytes = transport.roundTripBytes;
 
     // First retransmit: no fragments waiting, no grants sent.
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 20, 0,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "01234");
-    BasicTransport::ServerRpcMap::iterator it =
-            transport.incomingRpcs.find(BasicTransport::RpcId(100, 101));
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 20, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "01234");
+    HomaTransport::ServerRpcMap::iterator it =
+            transport.incomingRpcs.find(HomaTransport::RpcId(100, 101));
     ASSERT_TRUE(it != transport.incomingRpcs.end());
-    BasicTransport::ServerRpc* serverRpc = it->second;
+    HomaTransport::ServerRpc* serverRpc = it->second;
     ASSERT_TRUE(serverRpc->accumulator);
     EXPECT_EQ(0u, serverRpc->accumulator->fragments.size());
 
     driver->outputLog.clear();
     uint32_t limit = serverRpc->accumulator->requestRetransmission(
-            &transport, &address1, BasicTransport::RpcId(100, 101), 0,
-            BasicTransport::FROM_SERVER);
+            &transport, &address1, HomaTransport::RpcId(100, 101), 0, 1,
+            HomaTransport::FROM_SERVER);
     EXPECT_EQ(100u, limit);
-    EXPECT_EQ("RESEND FROM_SERVER, rpcId 100.101, offset 5, length 95",
-            driver->outputLog);
+    EXPECT_EQ("RESEND FROM_SERVER, rpcId 100.101, offset 5, length 95, "
+            "priority 1", driver->outputLog);
 
     // Second retransmit: no fragment, but grant was sent.
     driver->outputLog.clear();
     limit = serverRpc->accumulator->requestRetransmission(
-            &transport, &address1, BasicTransport::RpcId(100, 101), 25,
-            BasicTransport::FROM_SERVER);
+            &transport, &address1, HomaTransport::RpcId(100, 101), 25, 2,
+            HomaTransport::FROM_SERVER);
     EXPECT_EQ(25u, limit);
-    EXPECT_EQ("RESEND FROM_SERVER, rpcId 100.101, offset 5, length 20",
-            driver->outputLog);
+    EXPECT_EQ("RESEND FROM_SERVER, rpcId 100.101, offset 5, length 20, "
+            "priority 2", driver->outputLog);
 
     // Third retransmit: fragment waiting.
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 20, 15,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "abcde");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 20, 15,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
     driver->outputLog.clear();
     limit = serverRpc->accumulator->requestRetransmission(
-            &transport, &address1, BasicTransport::RpcId(100, 101), 25,
-            BasicTransport::FROM_SERVER);
+            &transport, &address1, HomaTransport::RpcId(100, 101), 25, 3,
+            HomaTransport::FROM_SERVER);
     EXPECT_EQ(15u, limit);
-    EXPECT_EQ("RESEND FROM_SERVER, rpcId 100.101, offset 5, length 10",
-            driver->outputLog);
+    EXPECT_EQ("RESEND FROM_SERVER, rpcId 100.101, offset 5, length 10, "
+            "priority 3", driver->outputLog);
 }
 
-TEST_F(BasicTransportTest, poll_nothingToDo) {
+TEST_F(HomaTransportTest, poll_nothingToDo) {
     transport.nextTimeoutCheck = ~0;
     int result = transport.poller.poll();
     EXPECT_EQ(0, result);
 }
-TEST_F(BasicTransportTest, poll_incomingPackets) {
+TEST_F(HomaTransportTest, poll_incomingPackets) {
     transport.maxDataPerPacket = 5;
     uint32_t unscheduledBytes = transport.roundTripBytes;
     // Send 3 fragments, process all at once.
     driver->packetArrived("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 15, 0,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "01234");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 15, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "01234");
     driver->packetArrived("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 15, 5,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "56789");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 15, 5,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "56789");
     driver->packetArrived("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 15, 10,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "ABCDE");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 15, 10,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "ABCDE");
     int result = transport.poller.poll();
-    BasicTransport::ServerRpcMap::iterator it =
-            transport.incomingRpcs.find(BasicTransport::RpcId(100, 101));
+    HomaTransport::ServerRpcMap::iterator it =
+            transport.incomingRpcs.find(HomaTransport::RpcId(100, 101));
     ASSERT_TRUE(it != transport.incomingRpcs.end());
-    BasicTransport::ServerRpc* serverRpc = it->second;
+    HomaTransport::ServerRpc* serverRpc = it->second;
     EXPECT_EQ("0123456789ABCDE",
             TestUtil::toString(&serverRpc->requestPayload));
     EXPECT_EQ(3u, Driver::Received::stealCount);
     EXPECT_EQ(1, result);
 }
-TEST_F(BasicTransportTest, poll_callCheckTimeouts) {
+TEST_F(HomaTransportTest, poll_callCheckTimeouts) {
     Cycles::mockTscValue = 100000;
     transport.poller.owner->currentTime = Cycles::rdtsc();
     transport.timerInterval = 1000;
     transport.nextTimeoutCheck = 102000;
     MockWrapper wrapper1("012345678901234");
     session->sendRequest(&wrapper1.request, &wrapper1.response, &wrapper1);
-    BasicTransport::ClientRpc* clientRpc = transport.outgoingRpcs[1];
+    HomaTransport::ClientRpc* clientRpc = transport.outgoingRpcs[1];
 
     // First call: timerInterval not reached.
     int result = transport.poller.poll();
@@ -1429,8 +1510,8 @@ TEST_F(BasicTransportTest, poll_callCheckTimeouts) {
     // Second call: timerInterval reached, but lots of input packets
     Cycles::mockTscValue = 103000;
     transport.poller.owner->currentTime = Cycles::rdtsc();
-    BasicTransport::BusyHeader busy(BasicTransport::RpcId(1000, 1001),
-            BasicTransport::FROM_CLIENT);
+    HomaTransport::BusyHeader busy(HomaTransport::RpcId(1000, 1001),
+            HomaTransport::FROM_CLIENT);
     createInputPackets(8, &busy);
     result = transport.poller.poll();
     EXPECT_EQ(0u, clientRpc->silentIntervals);
@@ -1459,32 +1540,32 @@ TEST_F(BasicTransportTest, poll_callCheckTimeouts) {
 
     Cycles::mockTscValue = 0;
 }
-TEST_F(BasicTransportTest, poll_outgoingGrant) {
+TEST_F(HomaTransportTest, poll_outgoingGrant) {
     transport.maxDataPerPacket = 5;
     transport.roundTripBytes = 20;
     transport.grantIncrement = 5;
     uint32_t unscheduledBytes = transport.roundTripBytes;
     // Send 3 fragments, process all at once.
     driver->packetArrived("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 100, 0,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "01234");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 100, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "01234");
     driver->packetArrived("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 100, 5,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "56789");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 100, 5,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "56789");
     driver->packetArrived("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 100, 10,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "abcde");
-    driver->packetArrived("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 102), 100, 0,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "ABCDE");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 100, 10,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    driver->packetArrived("mock:client=2",
+            HomaTransport::DataHeader(HomaTransport::RpcId(101, 102), 50, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "ABCDE");
     int result = transport.poller.poll();
-    EXPECT_EQ("GRANT FROM_SERVER, rpcId 100.101, offset 40 | "
-            "GRANT FROM_SERVER, rpcId 100.102, offset 30",
+    EXPECT_EQ("GRANT FROM_SERVER, rpcId 100.101, offset 35, priority 0 | "
+            "GRANT FROM_SERVER, rpcId 101.102, offset 25, priority 1",
             driver->outputLog);
     EXPECT_EQ(1, result);
     EXPECT_EQ(0u, transport.messagesToGrant.size());
 }
-TEST_F(BasicTransportTest, poll_outgoingPacket) {
+TEST_F(HomaTransportTest, poll_outgoingPacket) {
     driver->transmitQueueSpace = 0;
     MockWrapper wrapper1("012345678901234");
     session->sendRequest(&wrapper1.request, &wrapper1.response, &wrapper1);
@@ -1495,18 +1576,18 @@ TEST_F(BasicTransportTest, poll_outgoingPacket) {
             driver->outputLog);
     EXPECT_EQ(1, result);
 }
-TEST_F(BasicTransportTest, checkTimeouts_clientTransmissionNotStartedYet) {
+TEST_F(HomaTransportTest, checkTimeouts_clientTransmissionNotStartedYet) {
     driver->transmitQueueSpace = 0;
     MockWrapper wrapper("message1");
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
-    BasicTransport::ClientRpc* clientRpc = transport.outgoingRpcs[1lu];
+    HomaTransport::ClientRpc* clientRpc = transport.outgoingRpcs[1lu];
     transport.checkTimeouts();
     EXPECT_EQ(0u, clientRpc->silentIntervals);
     transport.checkTimeouts();
     transport.checkTimeouts();
     EXPECT_EQ(0u, clientRpc->silentIntervals);
 }
-TEST_F(BasicTransportTest, checkTimeouts_clientPingAndAbort) {
+TEST_F(HomaTransportTest, checkTimeouts_clientPingAndAbort) {
     transport.roundTripBytes = 100;
     MockWrapper wrapper(NULL);
     WireFormat::RequestCommon* header =
@@ -1514,7 +1595,7 @@ TEST_F(BasicTransportTest, checkTimeouts_clientPingAndAbort) {
     header->opcode = WireFormat::READ;
     header->service = WireFormat::MASTER_SERVICE;
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
-    BasicTransport::ClientRpc* clientRpc = transport.outgoingRpcs[1lu];
+    HomaTransport::ClientRpc* clientRpc = transport.outgoingRpcs[1lu];
     driver->outputLog.clear();
     transport.timeoutIntervals = 2*transport.pingIntervals+1;
 
@@ -1527,8 +1608,8 @@ TEST_F(BasicTransportTest, checkTimeouts_clientPingAndAbort) {
     // The next call should ping.
     clientRpc->silentIntervals = transport.pingIntervals - 1;
     transport.checkTimeouts();
-    EXPECT_EQ("RESEND FROM_CLIENT, rpcId 666.1, offset 0, length 100",
-            driver->outputLog);
+    EXPECT_EQ("RESEND FROM_CLIENT, rpcId 666.1, offset 0, length 100, "
+            "priority 7", driver->outputLog);
     driver->outputLog.clear();
     TestLog::reset();
 
@@ -1545,7 +1626,7 @@ TEST_F(BasicTransportTest, checkTimeouts_clientPingAndAbort) {
             "checkTimeouts: aborting READ RPC to server mock:node=3, "
             "sequence 1: timeout"));
 }
-TEST_F(BasicTransportTest, checkTimeouts_sendResendFromClient) {
+TEST_F(HomaTransportTest, checkTimeouts_sendResendFromClient) {
     transport.roundTripBytes = 100;
     transport.maxDataPerPacket = 5;
     transport.grantIncrement = 50;
@@ -1557,8 +1638,8 @@ TEST_F(BasicTransportTest, checkTimeouts_sendResendFromClient) {
     header->service = WireFormat::MASTER_SERVICE;
     session->sendRequest(&wrapper.request, &wrapper.response, &wrapper);
     handlePacket("mock:server=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(666, 1), 200,
-            0, unscheduledBytes, BasicTransport::FROM_SERVER),
+            HomaTransport::DataHeader(HomaTransport::RpcId(666, 1), 200,
+            0, unscheduledBytes, HomaTransport::FROM_SERVER),
             "abcde");
     driver->outputLog.clear();
 
@@ -1567,27 +1648,27 @@ TEST_F(BasicTransportTest, checkTimeouts_sendResendFromClient) {
     EXPECT_EQ("", TestLog::get());
 
     transport.checkTimeouts();
-    EXPECT_EQ("RESEND FROM_CLIENT, rpcId 666.1, offset 5, length 150",
-            driver->outputLog);
+    EXPECT_EQ("RESEND FROM_CLIENT, rpcId 666.1, offset 5, length 145, "
+            "priority 7", driver->outputLog);
 
     // If a packet arrives, RESENDS stop (for a while).
     driver->outputLog.clear();
     handlePacket("mock:server=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(666, 1), 200, 5,
-            unscheduledBytes, BasicTransport::FROM_SERVER), "fghij");
+            HomaTransport::DataHeader(HomaTransport::RpcId(666, 1), 200, 5,
+            unscheduledBytes, HomaTransport::FROM_SERVER), "fghij");
     transport.checkTimeouts();
     transport.checkTimeouts();
     EXPECT_EQ("", driver->outputLog);
 
     transport.checkTimeouts();
-    EXPECT_EQ("RESEND FROM_CLIENT, rpcId 666.1, offset 10, length 145",
-            driver->outputLog);
+    EXPECT_EQ("RESEND FROM_CLIENT, rpcId 666.1, offset 10, length 140, "
+            "priority 7", driver->outputLog);
 }
-TEST_F(BasicTransportTest, checkTimeouts_serverResponseTransmissionDelayed) {
+TEST_F(HomaTransportTest, checkTimeouts_serverResponseTransmissionDelayed) {
     driver->transmitQueueSpace = 0;
     transport.roundTripBytes = 15;
     transport.maxDataPerPacket = 15;
-    BasicTransport::ServerRpc* serverRpc = prepareToRespond();
+    HomaTransport::ServerRpc* serverRpc = prepareToRespond();
     serverRpc->sendReply();
 
     transport.checkTimeouts();
@@ -1596,13 +1677,13 @@ TEST_F(BasicTransportTest, checkTimeouts_serverResponseTransmissionDelayed) {
     transport.checkTimeouts();
     EXPECT_EQ(0u, serverRpc->silentIntervals);
 }
-TEST_F(BasicTransportTest, checkTimeouts_serverAbortsRequest) {
+TEST_F(HomaTransportTest, checkTimeouts_serverAbortsRequest) {
     transport.maxDataPerPacket = 5;
     transport.timeoutIntervals = 2;
     uint32_t unscheduledBytes = transport.roundTripBytes;
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 15, 0,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "abcde");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 15, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
 
     transport.checkTimeouts();
     EXPECT_EQ("", TestLog::get());
@@ -1611,16 +1692,16 @@ TEST_F(BasicTransportTest, checkTimeouts_serverAbortsRequest) {
     EXPECT_EQ("deleteServerRpc: RpcId (100, 101)",
             TestLog::get());
 }
-TEST_F(BasicTransportTest, checkTimeouts_sendResendFromServer) {
+TEST_F(HomaTransportTest, checkTimeouts_sendResendFromServer) {
     transport.roundTripBytes = 100;
     transport.maxDataPerPacket = 5;
     transport.grantIncrement = 50;
     uint32_t unscheduledBytes = transport.roundTripBytes;
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 15, 0,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "abcde");
-    BasicTransport::ServerRpcMap::iterator it =
-            transport.incomingRpcs.find(BasicTransport::RpcId(100, 101));
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 15, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ServerRpcMap::iterator it =
+            transport.incomingRpcs.find(HomaTransport::RpcId(100, 101));
     ASSERT_TRUE(it != transport.incomingRpcs.end());
     driver->outputLog.clear();
 
@@ -1628,20 +1709,229 @@ TEST_F(BasicTransportTest, checkTimeouts_sendResendFromServer) {
     EXPECT_EQ("", TestLog::get());
 
     transport.checkTimeouts();
-    EXPECT_EQ("RESEND FROM_SERVER, rpcId 100.101, offset 5, length 95",
-            driver->outputLog);
+    EXPECT_EQ("RESEND FROM_SERVER, rpcId 100.101, offset 5, length 95, "
+            "priority 7", driver->outputLog);
 
     // Packet arrival stops resends (for a while).
     handlePacket("mock:client=1",
-            BasicTransport::DataHeader(BasicTransport::RpcId(100, 101), 15, 5,
-            unscheduledBytes, BasicTransport::FROM_CLIENT), "fghij");
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 15, 5,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "fghij");
     driver->outputLog.clear();
     transport.checkTimeouts();
     EXPECT_EQ("", driver->outputLog);
 
     transport.checkTimeouts();
-    EXPECT_EQ("RESEND FROM_SERVER, rpcId 100.101, offset 10, length 90",
-            driver->outputLog);
+    EXPECT_EQ("RESEND FROM_SERVER, rpcId 100.101, offset 10, length 90, "
+            "priority 7", driver->outputLog);
+}
+
+TEST_F(HomaTransportTest, adjustSchedulingPrecedence) {
+    transport.roundTripBytes = 100;
+    transport.maxDataPerPacket = 5;
+    transport.grantIncrement = 5;
+    transport.maxGrantedMessages = 2;
+    uint32_t unscheduledBytes = transport.roundTripBytes;
+
+    // m1 < m2 < m3
+    handlePacket("mock:client=1",
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 150, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m1 = getServerRpc(
+            HomaTransport::RpcId(100, 101))->scheduledMessage.get();
+
+    // m2 also from client 1 but shorter.
+    handlePacket("mock:client=2",
+            HomaTransport::DataHeader(HomaTransport::RpcId(101, 102), 151, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m2 = getServerRpc(
+            HomaTransport::RpcId(101, 102))->scheduledMessage.get();
+
+    // m3 still from client 1 but larger than m2.
+    handlePacket("mock:client=3",
+            HomaTransport::DataHeader(HomaTransport::RpcId(102, 103), 152, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m3 = getServerRpc(
+            HomaTransport::RpcId(102, 103))->scheduledMessage.get();
+
+    // Receive one more packet from m3. Now m3 < m1 < m2.
+    handlePacket("mock:client=3",
+            HomaTransport::DataHeader(HomaTransport::RpcId(102, 103), 152, 5,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "fghij");
+    EXPECT_EQ(2u, transport.activeMessages.size());
+    EXPECT_EQ(&transport.activeMessages.front(), m3);
+    EXPECT_EQ(&transport.activeMessages.back(), m1);
+
+    // Receive one more packet from m2. Now m2 < m3 < m1.
+    handlePacket("mock:client=2",
+            HomaTransport::DataHeader(HomaTransport::RpcId(101, 102), 151, 5,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "fghij");
+    EXPECT_EQ(2u, transport.activeMessages.size());
+    EXPECT_EQ(&transport.activeMessages.front(), m2);
+    EXPECT_EQ(&transport.activeMessages.back(), m3);
+}
+TEST_F(HomaTransportTest, replaceActiveMessage) {
+    transport.roundTripBytes = 100;
+    transport.maxDataPerPacket = 5;
+    transport.grantIncrement = 5;
+    transport.maxGrantedMessages = 2;
+    uint32_t unscheduledBytes = transport.roundTripBytes;
+
+    handlePacket("mock:client=1",
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 150, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m1 = getServerRpc(
+            HomaTransport::RpcId(100, 101))->scheduledMessage.get();
+
+    // m2 > m1.
+    handlePacket("mock:client=2",
+            HomaTransport::DataHeader(HomaTransport::RpcId(101, 102), 200, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m2 = getServerRpc(
+            HomaTransport::RpcId(101, 102))->scheduledMessage.get();
+
+    // m3 > m2.
+    handlePacket("mock:client=3",
+            HomaTransport::DataHeader(HomaTransport::RpcId(102, 103), 250, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m3 = getServerRpc(
+            HomaTransport::RpcId(102, 103))->scheduledMessage.get();
+
+    // m4 > m3.
+    handlePacket("mock:client=4",
+            HomaTransport::DataHeader(HomaTransport::RpcId(103, 104), 300, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m4 = getServerRpc(
+            HomaTransport::RpcId(103, 104))->scheduledMessage.get();
+
+    EXPECT_EQ(2u, transport.activeMessages.size());
+    EXPECT_EQ(HomaTransport::ScheduledMessage::ACTIVE, m1->state);
+    EXPECT_EQ(HomaTransport::ScheduledMessage::ACTIVE, m2->state);
+
+    // Replace m1 with m3.
+    m1->grantOffset = ~0u;
+    transport.replaceActiveMessage(m1, m3);
+    EXPECT_EQ(2u, transport.activeMessages.size());
+    EXPECT_EQ(HomaTransport::ScheduledMessage::FULLY_GRANTED, m1->state);
+    EXPECT_EQ(HomaTransport::ScheduledMessage::ACTIVE, m2->state);
+    EXPECT_EQ(HomaTransport::ScheduledMessage::ACTIVE, m3->state);
+
+    // Replace m2 without explicitly specifying its replacement.
+    m2->grantOffset = ~0u;
+    transport.replaceActiveMessage(m2, NULL);
+    EXPECT_EQ(2u, transport.activeMessages.size());
+    EXPECT_EQ(HomaTransport::ScheduledMessage::FULLY_GRANTED, m2->state);
+    EXPECT_EQ(HomaTransport::ScheduledMessage::ACTIVE, m3->state);
+    EXPECT_EQ(HomaTransport::ScheduledMessage::ACTIVE, m4->state);
+
+    EXPECT_EQ(&transport.activeMessages.front(), m3);
+    EXPECT_EQ(&transport.activeMessages.back(), m4);
+}
+TEST_F(HomaTransportTest, tryToSchedule) {
+    transport.roundTripBytes = 100;
+    transport.maxDataPerPacket = 5;
+    transport.grantIncrement = 5;
+    transport.maxGrantedMessages = 2;
+    uint32_t unscheduledBytes = transport.roundTripBytes;
+
+    handlePacket("mock:client=1",
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 200, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m1 = getServerRpc(
+            HomaTransport::RpcId(100, 101))->scheduledMessage.get();
+
+    // m2 also from client 1 but shorter.
+    handlePacket("mock:client=1",
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 102), 150, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m2 = getServerRpc(
+            HomaTransport::RpcId(100, 102))->scheduledMessage.get();
+    EXPECT_EQ(HomaTransport::ScheduledMessage::INACTIVE, m1->state);
+    EXPECT_EQ(HomaTransport::ScheduledMessage::ACTIVE, m2->state);
+
+    // m3 still from client 1 but larger than m2.
+    handlePacket("mock:client=1",
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 103), 200, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m3 = getServerRpc(
+            HomaTransport::RpcId(100, 103))->scheduledMessage.get();
+    EXPECT_EQ(1u, transport.activeMessages.size());
+    EXPECT_EQ(HomaTransport::ScheduledMessage::ACTIVE, m2->state);
+    EXPECT_EQ(HomaTransport::ScheduledMessage::INACTIVE, m3->state);
+
+    // m4 is from client 2 and larger than m2. We can grant one more message
+    // concurrently.
+    handlePacket("mock:client=2",
+            HomaTransport::DataHeader(HomaTransport::RpcId(101, 104), 200, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m4 = getServerRpc(
+            HomaTransport::RpcId(101, 104))->scheduledMessage.get();
+    EXPECT_EQ(2u, transport.activeMessages.size());
+    EXPECT_EQ(HomaTransport::ScheduledMessage::ACTIVE, m2->state);
+    EXPECT_EQ(HomaTransport::ScheduledMessage::ACTIVE, m4->state);
+
+    // m5 is from client 3 and m2 < m5 < m4. It should replace m4.
+    handlePacket("mock:client=3",
+            HomaTransport::DataHeader(HomaTransport::RpcId(102, 105), 175, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m5 = getServerRpc(
+            HomaTransport::RpcId(102, 105))->scheduledMessage.get();
+    EXPECT_EQ(2u, transport.activeMessages.size());
+    EXPECT_EQ(HomaTransport::ScheduledMessage::ACTIVE, m2->state);
+    EXPECT_EQ(HomaTransport::ScheduledMessage::ACTIVE, m5->state);
+
+    // m6 is from client 4 and m5 < m6. It should go to inactive message list.
+    handlePacket("mock:client=4",
+            HomaTransport::DataHeader(HomaTransport::RpcId(103, 106), 176, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m6 = getServerRpc(
+            HomaTransport::RpcId(103, 106))->scheduledMessage.get();
+    EXPECT_EQ(HomaTransport::ScheduledMessage::INACTIVE, m6->state);
+
+    // Receive one more packet from m6. Now m6 is shorter than m5.
+    handlePacket("mock:client=4",
+            HomaTransport::DataHeader(HomaTransport::RpcId(103, 106), 176, 5,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "fghij");
+    EXPECT_EQ(2u, transport.activeMessages.size());
+    EXPECT_EQ(HomaTransport::ScheduledMessage::ACTIVE, m2->state);
+    EXPECT_EQ(HomaTransport::ScheduledMessage::ACTIVE, m6->state);
+
+    EXPECT_EQ(&transport.activeMessages.front(), m2);
+    EXPECT_EQ(&transport.activeMessages.back(), m6);
+}
+TEST_F(HomaTransportTest, dataPacketArrive) {
+    transport.roundTripBytes = 100;
+    transport.maxDataPerPacket = 5;
+    transport.grantIncrement = 5;
+    transport.maxGrantedMessages = 2;
+    uint32_t unscheduledBytes = transport.roundTripBytes;
+
+    handlePacket("mock:client=1",
+            HomaTransport::DataHeader(HomaTransport::RpcId(100, 101), 300, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m1 = getServerRpc(
+            HomaTransport::RpcId(100, 101))->scheduledMessage.get();
+    EXPECT_EQ(transport.messagesToGrant.back(), m1);
+    EXPECT_EQ(0, m1->grantPriority);
+
+    // m2 < m1
+    handlePacket("mock:client=2",
+            HomaTransport::DataHeader(HomaTransport::RpcId(101, 102), 250, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m2 = getServerRpc(
+            HomaTransport::RpcId(101, 102))->scheduledMessage.get();
+    EXPECT_EQ(transport.messagesToGrant.back(), m2);
+    EXPECT_EQ(1, m2->grantPriority);
+
+    // m3 < m2. Use unscheduled priority for the last 1 RTT bytes.
+    handlePacket("mock:client=3",
+            HomaTransport::DataHeader(HomaTransport::RpcId(102, 103), 200, 0,
+            unscheduledBytes, HomaTransport::FROM_CLIENT), "abcde");
+    HomaTransport::ScheduledMessage* m3 = getServerRpc(
+            HomaTransport::RpcId(102, 103))->scheduledMessage.get();
+    EXPECT_EQ(transport.messagesToGrant.back(), m3);
+    EXPECT_EQ(7, m3->grantPriority);
+
+    EXPECT_EQ(3u, transport.messagesToGrant.size());
 }
 
 }  // namespace RAMCloud

@@ -87,6 +87,7 @@ DpdkDriver::DpdkDriver()
     : context(NULL)
     , packetBufPool()
     , packetBufsUtilized(0)
+    , payloadsToRelease()
     , locatorString()
     , localMac()
     , portId(0)
@@ -94,8 +95,6 @@ DpdkDriver::DpdkDriver()
     , loopbackRing(NULL)
     , hasHardwareFilter(true)
     , bandwidthMbps(10000)
-    , highestPriorityAvail(7)
-    , lowestPriorityAvail(0)
     , fileLogger(NOTICE, "DPDK: ")
 {
     localMac.construct("01:23:45:67:89:ab");
@@ -124,6 +123,7 @@ DpdkDriver::DpdkDriver(Context* context, int port)
     : context(context)
     , packetBufPool()
     , packetBufsUtilized(0)
+    , payloadsToRelease()
     , locatorString()
     , localMac()
     , portId(0)
@@ -131,9 +131,6 @@ DpdkDriver::DpdkDriver(Context* context, int port)
     , loopbackRing(NULL)
     , hasHardwareFilter(true)             // Cleared later if not applicable
     , bandwidthMbps(10000)                // Default bandwidth = 10 gbs
-    // Assume we are allowed to use all 8 ethernet priorities.
-    , highestPriorityAvail(7)
-    , lowestPriorityAvail(0)
     , fileLogger(NOTICE, "DPDK: ")
 {
     struct ether_addr mac;
@@ -292,6 +289,7 @@ DpdkDriver::DpdkDriver(Context* context, int port)
  */
 DpdkDriver::~DpdkDriver()
 {
+    releaseHint(-1);
     if (packetBufsUtilized != 0)
         LOG(ERROR, "DpdkDriver deleted with %d packets still in use",
             packetBufsUtilized);
@@ -307,7 +305,7 @@ DpdkDriver::~DpdkDriver()
 int
 DpdkDriver::getHighestPacketPriority()
 {
-    return highestPriorityAvail - lowestPriorityAvail;
+    return arrayLength(PRIORITY_TO_PCP) - 1;
 }
 
 // See docs in Driver class.
@@ -424,14 +422,26 @@ DpdkDriver::release(char *payload)
     // Must sync with the dispatch thread, since this method could potentially
     // be invoked in a worker.
     Dispatch::Lock _(context->dispatch);
+    payloadsToRelease.push_back(payload);
+}
 
-    packetBufsUtilized--;
-    assert(packetBufsUtilized >= 0);
-    if (packet_buf_type(payload) == DPDK_MBUF) {
-        rte_pktmbuf_free(payload_to_mbuf(payload));
-    } else {
-        packetBufPool.destroy(reinterpret_cast<PacketBuf*>(
-                payload - OFFSET_OF(PacketBuf, payload)));
+// See docs in Driver class.
+void
+DpdkDriver::releaseHint(int maxCount)
+{
+    while ((maxCount != 0) && !payloadsToRelease.empty()) {
+        maxCount--;
+        char* payload = payloadsToRelease.back();
+        payloadsToRelease.pop_back();
+
+        packetBufsUtilized--;
+        assert(packetBufsUtilized >= 0);
+        if (packet_buf_type(payload) == DPDK_MBUF) {
+            rte_pktmbuf_free(payload_to_mbuf(payload));
+        } else {
+            packetBufPool.destroy(reinterpret_cast<PacketBuf*>(
+                    payload - OFFSET_OF(PacketBuf, payload)));
+        }
     }
 }
 
@@ -463,7 +473,6 @@ DpdkDriver::sendPacket(const Address* addr,
 {
     // Convert transport-level packet priority to Ethernet priority.
     assert(priority >= 0 && priority <= getHighestPacketPriority());
-    priority += lowestPriorityAvail;
 
     uint32_t etherPayloadLength = headerLen + (payload ? payload->size() : 0);
     assert(etherPayloadLength <= MAX_PAYLOAD_SIZE);
@@ -482,8 +491,8 @@ DpdkDriver::sendPacket(const Address* addr,
         uint32_t numMbufsInUse = rte_mempool_in_use_count(mbufPool);
         RAMCLOUD_CLOG(WARNING,
                 "Failed to allocate a packet buffer; dropping packet; "
-                "%u mbufs available, %u mbufs in use",
-                numMbufsAvail, numMbufsInUse);
+                "%u mbufs available, %u mbufs in use, %lu payloads to release",
+                numMbufsAvail, numMbufsInUse, payloadsToRelease.size());
         return;
     }
 

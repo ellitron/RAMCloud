@@ -66,6 +66,7 @@ class DpdkDriver : public Driver
     virtual void receivePackets(uint32_t maxPackets,
             std::vector<Received>* receivedPackets);
     virtual void release(char *payload);
+    virtual void releaseHint(int maxCount);
     virtual void releaseHwPacketBuf(Driver::Received* received);
     virtual void sendPacket(const Address* addr,
                             const void* header,
@@ -136,6 +137,11 @@ class DpdkDriver : public Driver
     /// Tracks number of outstanding allocated payloads.  For detecting leaks.
     int packetBufsUtilized;
 
+    /// Holds packet buffers that the transport has done processing and
+    /// returned. These packet buffers are recycled incrementally to avoid
+    /// jitters.
+    std::vector<char*> payloadsToRelease;
+
     /// The original ServiceLocator string. May be empty if the constructor
     /// argument was NULL. May also differ if dynamic ports are used.
     string locatorString;
@@ -159,16 +165,6 @@ class DpdkDriver : public Driver
 
     /// Effective network bandwidth, in Mbits/second.
     uint32_t bandwidthMbps;
-
-    /// Highest ethernet priority level the driver is allowed to use. Must be
-    /// less than or equal to 7.
-    int highestPriorityAvail;
-
-    /// Lowest ethernet priority level the driver is allowed to use. Must be
-    /// greater than or equal to 0.
-    /// Note: the highest packet priority presented to the transport level will
-    /// be `highestPriorityAvail - lowestPriorityAvail + 1`.
-    int lowestPriorityAvail;
 
     /// Used to redirect log entries from the DPDK log into the RAMCloud log.
     FileLogger fileLogger;
