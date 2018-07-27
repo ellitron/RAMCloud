@@ -145,6 +145,6 @@ $(OBJDIR)/libramcloud.a: $(CLIENT_OBJFILES)
 
 $(OBJDIR)/libramcloud.so: $(CLIENT_OBJFILES)
 	@mkdir -p $(@D)
-	$(CXX) $(LDFLAGS) -shared -o $@ $^ -Wl,--no-undefined,-soname,libramcloud.so $(LIBS)
+	$(CXX) $(LDFLAGS) -shared -o $@ $^ $(OBJDIR)/OptionParser.o -Wl,--no-undefined,-soname,libramcloud.so $(LIBS)
 
 all: $(OBJDIR)/libramcloud.so $(OBJDIR)/libramcloud.a

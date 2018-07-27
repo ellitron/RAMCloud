@@ -98,7 +98,9 @@ JNICALL Java_edu_stanford_ramcloud_RAMCloud_cppGetByteBufferPointer(
  *      The format for the input buffer is:
  *          4 bytes for length of cluster locator string
  *          NULL-terminated string for cluster locator
+ *          4 byte for length of cluster name
  *          NULL-terminated string for cluster name
+ *          4 byte for DPDK port to use
  *      The format for the output buffer is:
  *          4 bytes for status code of the RamCloud constructor
  *          8 bytes for a pointer to the created RamCloud object
@@ -112,12 +114,25 @@ JNICALL Java_edu_stanford_ramcloud_RAMCloud_cppConnect(
     uint32_t locatorLength = buffer.read<uint32_t>();
     char* locator = buffer.pointer + buffer.mark;
     buffer.mark += 1 + locatorLength;
+    uint32_t clusterNameLength = buffer.read<uint32_t>();
     char* name = buffer.pointer + buffer.mark;
+    buffer.mark += 1 + clusterNameLength;
+    int32_t dpdkPort = buffer.read<int32_t>();
+
+    char* execName = "client";
+    OptionParser optionParser(1, &execName);
+    string coordinatorLocator(locator);
+    optionParser.options.coordinatorLocator = coordinatorLocator;
+    string clusterName(name);
+    optionParser.options.clusterName = clusterName;
+
+    if (dpdkPort != -1)
+      optionParser.options.dpdkPort = dpdkPort;
 
     RamCloud* ramcloud = NULL;
     buffer.rewind();
     try {
-        ramcloud = new RamCloud(locator, name);
+        ramcloud = new RamCloud(&optionParser.options);
     } EXCEPTION_CATCHER(buffer);
     buffer.write(reinterpret_cast<uint64_t>(ramcloud));
 }
