@@ -153,12 +153,11 @@ public class TableIterator implements Iterator<RAMCloudObject> {
     }
 
     /**
-     * This method is called when this object is being garbage collected. If the
-     * iterator never iterated through the entire table, then clean up the C++
-     * resources now.
+     * Frees the C++ resources that this object uses. Once closed the object can
+     * no longer be used.
      */
     @Override
-    public void finalize() {
+    public void close() {
         if (tableEnumeratorPointer != -1) {
             delete(tableEnumeratorPointer);
         }

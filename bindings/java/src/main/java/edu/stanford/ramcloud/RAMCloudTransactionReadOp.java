@@ -113,11 +113,10 @@ public class RAMCloudTransactionReadOp {
     }
 
     /**
-     * This method is called by the garbage collector before destroying the
-     * object. 
+     * Deconstructs the object in C++. Once this method has been called the
+     * corresponding C++ object no longer exists.
      */
-    @Override
-    public void finalize() {
+    public void close() {
         if (cppTransactionReadOpObjectPointer != 0) {
             byteBuffer.rewind();
             byteBuffer.putLong(cppTransactionReadOpObjectPointer);
