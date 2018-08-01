@@ -157,16 +157,6 @@ public class RAMCloudTransaction {
             ClientException.checkStatus(byteBuffer.getInt());
         }
     }
-
-    /**
-     * This method is called by the garbage collector before destroying the
-     * object. The user really should have called close, but in case they
-     * did not, be sure to clean up after them.
-     */
-    @Override
-    public void finalize() {
-        close();
-    }
     
     /**
      * Commits the transaction defined by the operations performed on this

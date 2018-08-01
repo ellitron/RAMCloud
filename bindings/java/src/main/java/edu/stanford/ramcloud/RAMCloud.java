@@ -208,16 +208,6 @@ public class RAMCloud {
     }
 
     /**
-     * This method is called by the garbage collector before destroying the
-     * object. The user really should have called disconnect, but in case they
-     * did not, be sure to clean up after them.
-     */
-    @Override
-    public void finalize() {
-        disconnect();
-    }
-
-    /**
      * Read the current contents of an object.
      *
      * @see #read(long, byte[], edu.stanford.ramcloud.RejectRules)
