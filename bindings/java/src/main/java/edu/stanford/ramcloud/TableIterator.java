@@ -156,7 +156,6 @@ public class TableIterator implements Iterator<RAMCloudObject> {
      * Frees the C++ resources that this object uses. Once closed the object can
      * no longer be used.
      */
-    @Override
     public void close() {
         if (tableEnumeratorPointer != -1) {
             delete(tableEnumeratorPointer);
