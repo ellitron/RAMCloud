@@ -251,10 +251,11 @@ Transaction::ReadOp::ReadOp(Transaction* transaction, uint64_t tableId,
 {
     keyBuf.appendCopy(key, keyLength);
 
-    ClientTransactionTask* task = transaction->taskPtr.get();
+//    ClientTransactionTask* task = transaction->taskPtr.get();
 
     Key keyObj(tableId, key, keyLength);
-    ClientTransactionTask::CacheEntry* entry = task->findCacheEntry(keyObj);
+//    ClientTransactionTask::CacheEntry* entry = task->findCacheEntry(keyObj);
+    ClientTransactionTask::CacheEntry* entry = NULL;
 
     if (!requestBatched) {
         singleRequest.construct();
@@ -348,10 +349,11 @@ Transaction::ReadOp::wait(bool* objectExists)
         throw TxOpAfterCommit(HERE);
     }
 
-    ClientTransactionTask* task = transaction->taskPtr.get();
+//    ClientTransactionTask* task = transaction->taskPtr.get();
 
     Key keyObj(tableId, keyBuf, 0, keyLength);
-    ClientTransactionTask::CacheEntry* entry = task->findCacheEntry(keyObj);
+//    ClientTransactionTask::CacheEntry* entry = task->findCacheEntry(keyObj);
+    ClientTransactionTask::CacheEntry* entry = NULL;
 
     // Assume we found the object exists unless we find out otherwise.
     bool objectFound = true;
@@ -367,7 +369,7 @@ Transaction::ReadOp::wait(bool* objectExists)
             assert(singleRequest->readRpc);
 
             singleRequest->readRpc->wait(&version, &objectFound);
-            if (objectFound)
+            if (objectFound) 
                 data = buf->getValue(&dataLength);
         } else {
             assert(batchedRequest);
@@ -398,18 +400,21 @@ Transaction::ReadOp::wait(bool* objectExists)
             }
         }
 
-        entry = task->insertCacheEntry(keyObj, data, dataLength);
-        entry->type = ClientTransactionTask::CacheEntry::READ;
-        if (objectFound) {
-            entry->rejectRules.doesntExist = true;
-            entry->rejectRules.givenVersion = version;
-            entry->rejectRules.versionNeGiven = true;
-        } else {
-            // Object did not exists at the time of the read so remember to
-            // reject (abort) the transaction if it does exist.
-            entry->rejectRules.exists = true;
-            objectFound = false;
-        }
+        value->reset();
+        value->appendCopy(data, dataLength);
+
+//        entry = task->insertCacheEntry(keyObj, data, dataLength);
+//        entry->type = ClientTransactionTask::CacheEntry::READ;
+//        if (objectFound) {
+//            entry->rejectRules.doesntExist = true;
+//            entry->rejectRules.givenVersion = version;
+//            entry->rejectRules.versionNeGiven = true;
+//        } else {
+//            // Object did not exists at the time of the read so remember to
+//            // reject (abort) the transaction if it does exist.
+//            entry->rejectRules.exists = true;
+//            objectFound = false;
+//        }
 
     } else if (entry->type == ClientTransactionTask::CacheEntry::REMOVE) {
         // Read after remove; object would no longer exist.
@@ -429,10 +434,10 @@ Transaction::ReadOp::wait(bool* objectExists)
             return;
     }
 
-    uint32_t dataLength;
-    const void* data = entry->objectBuf.getValue(&dataLength);
-    value->reset();
-    value->appendCopy(data, dataLength);
+//    uint32_t dataLength;
+//    const void* data = entry->objectBuf.getValue(&dataLength);
+//    value->reset();
+//    value->appendCopy(data, dataLength);
 }
 
 } // namespace RAMCloud
