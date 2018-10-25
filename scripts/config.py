@@ -95,8 +95,12 @@ server_port = 12247
 second_backup_port = 12248
 
 # Command-line argument specifying where the server should store the segment
-# replicas by default.
-default_disks = '-f /dev/sda2,/dev/sdb2'
+# replicas when one device is used.
+default_disk1 = '-f /local/rcbackup/backup.log'
+
+# Command-line argument specifying where the server should store the segment
+# replicas when two devices are used.
+default_disk2 = '-f /local/rcbackup/backup.log'
 
 # List of machines available to use as servers or clients; see
 # common.getHosts() for more information on how to set this variable.
