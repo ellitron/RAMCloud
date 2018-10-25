@@ -327,11 +327,12 @@ class Cluster(object):
         log_prefix = '%s/server%d.%s' % (
                       self.log_subdir, self.next_server_id, host[0])
 
-        command = ('%s %s -C %s -L %s -r %d -l %s --clusterName __unnamed__ '
+        command = ('%s %s -C %s -L %s;%s -r %d -l %s --clusterName __unnamed__ '
                    '--logFile %s.log --preferredIndex %d %s' %
                    (prefix_command,
                     server_binary, self.coordinator_locator,
                     server_locator(self.transport, host, port),
+                    "tcp:host=127.0.0.1,port=12242",
                     self.replicas,
                     self.log_level,
                     log_prefix,
