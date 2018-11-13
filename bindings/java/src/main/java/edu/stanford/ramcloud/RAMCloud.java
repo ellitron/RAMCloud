@@ -330,6 +330,20 @@ public class RAMCloud {
     }
 
     /**
+     * Calls TimeTrace::printToLog()
+     */
+    public void timeTracePrintToLog() {
+      RAMCloud.cppTimeTracePrintToLog();
+    }
+
+    /**
+     * Calls TimeTrace::reset()
+     */
+    public void timeTraceReset() {
+      RAMCloud.cppTimeTraceReset();
+    }
+
+    /**
      * Replace the value of a given object, or create a new object if none
      * previously existed.
      *
@@ -586,6 +600,10 @@ public class RAMCloud {
     private static native void cppRead(long cppByteBufferPointer);
 
     private static native void cppRemove(long cppByteBufferPointer);
+
+    private static native void cppTimeTracePrintToLog();
+
+    private static native void cppTimeTraceReset();
 
     private static native void cppWrite(long cppByteBufferPointer);
     
