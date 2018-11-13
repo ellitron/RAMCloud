@@ -17,6 +17,7 @@
 #include <MultiRead.h>
 #include <MultiWrite.h>
 #include <MultiRemove.h>
+#include <TimeTrace.h>
 
 #include <Util.h>
 #include "edu_stanford_ramcloud_RAMCloud.h"
@@ -359,6 +360,24 @@ JNICALL Java_edu_stanford_ramcloud_RAMCloud_cppRemove(JNIEnv *env,
         ramcloud->remove(tableId, key, keyLength, &rejectRules, &version);
     } EXCEPTION_CATCHER(buffer);
     buffer.write(version);
+}
+
+/**
+ * Prints TimeTrace to log.
+ */
+JNIEXPORT void
+JNICALL Java_edu_stanford_ramcloud_RAMCloud_cppTimeTracePrintToLog(JNIEnv *env,
+        jclass jRamCloud) {
+    TimeTrace::printToLog();
+}
+
+/**
+ * Resets TimeTrace.
+ */
+JNIEXPORT void
+JNICALL Java_edu_stanford_ramcloud_RAMCloud_cppTimeTraceReset(JNIEnv *env,
+        jclass jRamCloud) {
+    TimeTrace::reset();
 }
 
 /**
