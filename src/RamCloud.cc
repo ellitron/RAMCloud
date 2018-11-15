@@ -1872,8 +1872,19 @@ RamCloud::multiIncrement(MultiIncrementObject* requests[], uint32_t numRequests)
 void
 RamCloud::multiRead(MultiReadObject* requests[], uint32_t numRequests)
 {
+    TimeTrace::record("Start MultiRead");
     MultiRead request(this, requests, numRequests);
     request.wait();
+    uint32_t totalsize = 0;
+    for (uint32_t i = 0; i < numRequests; i++) {
+      uint32_t keyLength = requests[i]->keyLength;
+      uint32_t valueLength = 0;
+      if (requests[i]->value->get() != NULL) {
+        requests[i]->value->get()->getValue(&valueLength);
+      }
+      totalsize += keyLength + valueLength;
+    }
+    TimeTrace::record("End MultiRead, NumRequests: %d, TotalSize: %dB", numRequests, totalsize);
 }
 
 /**
@@ -1948,8 +1959,10 @@ RamCloud::read(uint64_t tableId, const void* key, uint16_t keyLength,
         Buffer* value, const RejectRules* rejectRules, uint64_t* version,
         bool* objectExists)
 {
+    TimeTrace::record("Start ReadRpc");
     ReadRpc rpc(this, tableId, key, keyLength, value, rejectRules);
     rpc.wait(version, objectExists);
+    TimeTrace::record("End ReadRpc, KeySize: %dB, ValueSize: %dB, TotalSize: %dB", keyLength, value->size(), keyLength + value->size());
 }
 
 /**

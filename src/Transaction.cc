@@ -17,6 +17,7 @@
 #include "ClientTransactionTask.h"
 #include "ClientException.h"
 #include "Transaction.h"
+#include "TimeTrace.h"
 
 namespace RAMCloud {
 
@@ -344,6 +345,8 @@ Transaction::ReadOp::isReady()
 void
 Transaction::ReadOp::wait(bool* objectExists)
 {
+    TimeTrace::record("Start ReadOp.wait()");
+
     if (expect_false(transaction->commitStarted)) {
         throw TxOpAfterCommit(HERE);
     }
@@ -425,14 +428,18 @@ Transaction::ReadOp::wait(bool* objectExists)
             throw ObjectDoesntExistException(HERE);
     } else {
         *objectExists = objectFound;
-        if (!objectFound)
+        if (!objectFound) {
+            TimeTrace::record("End ReadOp.wait(), Object DNE");
             return;
+        }
     }
 
     uint32_t dataLength;
     const void* data = entry->objectBuf.getValue(&dataLength);
     value->reset();
     value->appendCopy(data, dataLength);
+
+    TimeTrace::record("End ReadOp.wait(), KeySize: %dB, ValueSize: %dB, TotalSize: %dB", keyLength, value->size(), keyLength + value->size());
 }
 
 } // namespace RAMCloud
