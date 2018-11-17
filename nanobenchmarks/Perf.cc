@@ -63,7 +63,7 @@
 #include "SpinLock.h"
 #include "ClientException.h"
 #include "../src/PerfHelper.h"
-#include "TimeTrace.h"
+#include "../src/TimeTrace.h"
 #include "../src/Util.h"
 
 using namespace RAMCloud;
