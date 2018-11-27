@@ -1872,8 +1872,26 @@ RamCloud::multiIncrement(MultiIncrementObject* requests[], uint32_t numRequests)
 void
 RamCloud::multiRead(MultiReadObject* requests[], uint32_t numRequests)
 {
+    uint64_t startTime = Cycles::rdtsc();
     MultiRead request(this, requests, numRequests);
     request.wait();
+    uint64_t endTime = Cycles::rdtsc();
+    uint32_t totalKeyLen = 0;
+    uint32_t totalValLen = 0;
+    uint32_t totalDNE = 0;
+    uint32_t totalOK = 0;
+    for (uint32_t i = 0; i < numRequests; i++) {
+      totalKeyLen += requests[i]->keyLength;
+      if (requests[i]->status == STATUS_OK) {
+        uint32_t valLen = 0;
+        requests[i]->value->get()->getValue(&valLen);
+        totalValLen += valLen;
+        totalOK++;
+      } else if (requests[i]->status == STATUS_OBJECT_DOESNT_EXIST) { 
+        totalDNE++;
+      }
+    }
+    NANO_LOG(NOTICE, "type: multiread_edgelist, startTime: %luns, endTime: %luns, elapsedTime: %luns, numRequests: %d, totalKeyLen: %dB, totalValLen: %dB, totalLen: %dB, totalOK: %d, totalDNE: %d", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), numRequests, totalKeyLen, totalValLen, totalKeyLen + totalValLen, totalOK, totalDNE);
 }
 
 /**
@@ -1948,8 +1966,21 @@ RamCloud::read(uint64_t tableId, const void* key, uint16_t keyLength,
         Buffer* value, const RejectRules* rejectRules, uint64_t* version,
         bool* objectExists)
 {
+    uint64_t startTime = Cycles::rdtsc();
     ReadRpc rpc(this, tableId, key, keyLength, value, rejectRules);
     rpc.wait(version, objectExists);
+    uint64_t endTime = Cycles::rdtsc();
+    if (keyLength == 17) {
+      if (((const uint8_t*)key)[16] == 0) {
+        NANO_LOG(NOTICE, "type: read_label, startTime: %luns, endTime: %luns, elapsedTime: %luns, keyLen: %dB, valLen: %dB, totalLen: %dB", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), keyLength, value->size(), keyLength + value->size());
+      } else if (((const uint8_t*)key)[16] == 1) {
+        NANO_LOG(NOTICE, "type: read_properties, startTime: %luns, endTime: %luns, elapsedTime: %luns, keyLen: %dB, valLen: %dB, totalLen: %dB", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), keyLength, value->size(), keyLength + value->size());
+      } else {
+        NANO_LOG(NOTICE, "type: unknown, startTime: %luns, endTime: %luns, elapsedTime: %luns, keyLen: %dB, valLen: %dB, totalLen: %dB", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), keyLength, value->size(), keyLength + value->size());
+      }
+    } else {
+      NANO_LOG(NOTICE, "type: read_edgelist, startTime: %luns, endTime: %luns, elapsedTime: %luns, keyLen: %dB, valLen: %dB, totalLen: %dB", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), keyLength, value->size(), keyLength + value->size());
+    }
 }
 
 /**
