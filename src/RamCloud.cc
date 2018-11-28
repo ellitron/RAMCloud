@@ -1891,7 +1891,7 @@ RamCloud::multiRead(MultiReadObject* requests[], uint32_t numRequests)
         totalDNE++;
       }
     }
-    NANO_LOG(NOTICE, "type: multiread_edgelist, startTime: %luns, endTime: %luns, elapsedTime: %luns, numRequests: %d, totalKeyLen: %dB, totalValLen: %dB, totalLen: %dB, totalOK: %d, totalDNE: %d", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), numRequests, totalKeyLen, totalValLen, totalKeyLen + totalValLen, totalOK, totalDNE);
+    NANO_LOG(NOTICE, "{\"type\": \"multiread_edgelist\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"numRequests\": %d, \"totalKeyLen\": %d, \"totalValLen\": %d, \"totalLen\": %d, \"totalOK\": %d, \"totalDNE\": %d}", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), numRequests, totalKeyLen, totalValLen, totalKeyLen + totalValLen, totalOK, totalDNE);
 }
 
 /**
@@ -1970,17 +1970,22 @@ RamCloud::read(uint64_t tableId, const void* key, uint16_t keyLength,
     ReadRpc rpc(this, tableId, key, keyLength, value, rejectRules);
     rpc.wait(version, objectExists);
     uint64_t endTime = Cycles::rdtsc();
+
+    // Discern the type of TorcDB object that was read
+    const char *typestr;
     if (keyLength == 17) {
       if (((const uint8_t*)key)[16] == 0) {
-        NANO_LOG(NOTICE, "type: read_label, startTime: %luns, endTime: %luns, elapsedTime: %luns, keyLen: %dB, valLen: %dB, totalLen: %dB", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), keyLength, value->size(), keyLength + value->size());
+        typestr = "read_label";
       } else if (((const uint8_t*)key)[16] == 1) {
-        NANO_LOG(NOTICE, "type: read_properties, startTime: %luns, endTime: %luns, elapsedTime: %luns, keyLen: %dB, valLen: %dB, totalLen: %dB", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), keyLength, value->size(), keyLength + value->size());
+        typestr = "read_properties";
       } else {
-        NANO_LOG(NOTICE, "type: unknown, startTime: %luns, endTime: %luns, elapsedTime: %luns, keyLen: %dB, valLen: %dB, totalLen: %dB", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), keyLength, value->size(), keyLength + value->size());
+        typestr = "unknown";
       }
     } else {
-      NANO_LOG(NOTICE, "type: read_edgelist, startTime: %luns, endTime: %luns, elapsedTime: %luns, keyLen: %dB, valLen: %dB, totalLen: %dB", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), keyLength, value->size(), keyLength + value->size());
+      typestr = "read_edgelist";
     }
+
+    NANO_LOG(NOTICE, "{\"type\": \"%s\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"keyLen\": %d, \"valLen\": %d, \"totalLen\": %d}", typestr, Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), keyLength, value->size(), keyLength + value->size());
 }
 
 /**
