@@ -17,6 +17,7 @@
 #include "ClientTransactionTask.h"
 #include "ClientException.h"
 #include "Transaction.h"
+#include "Cycles.h"
 
 namespace RAMCloud {
 
@@ -348,6 +349,26 @@ Transaction::ReadOp::wait(bool* objectExists)
         throw TxOpAfterCommit(HERE);
     }
 
+    // Determine what type of object we are reading.
+    const char* objtypestr;
+    if (keyLength == 17) {
+      uint8_t rcobjtype = *(keyBuf.getOffset<uint8_t>(16));
+      if (rcobjtype  == 0) {
+        objtypestr = "label";
+      } else if (rcobjtype  == 1) {
+        objtypestr = "properties";
+      } else {
+        objtypestr = "unknown";
+      }
+    } else {
+      objtypestr = "edgelist";
+    }
+
+    // When we find out later, store the type of op this was.
+    const char *optypestr;
+
+    uint64_t startTime = Cycles::rdtsc();
+
     ClientTransactionTask* task = transaction->taskPtr.get();
 
     Key keyObj(tableId, keyBuf, 0, keyLength);
@@ -362,6 +383,7 @@ Transaction::ReadOp::wait(bool* objectExists)
         const void* data = NULL;
 
         if (!requestBatched) {
+            optypestr = "txrd";
             assert(singleRequest);
             // If no entry exists in cache an rpc must have been issued.
             assert(singleRequest->readRpc);
@@ -370,6 +392,7 @@ Transaction::ReadOp::wait(bool* objectExists)
             if (objectFound)
                 data = buf->getValue(&dataLength);
         } else {
+            optypestr = "txbatchrd";
             assert(batchedRequest);
             // If no entry exists in cache a batch must have been assigned.
             assert(batchedRequest->readBatchPtr);
@@ -411,28 +434,66 @@ Transaction::ReadOp::wait(bool* objectExists)
             objectFound = false;
         }
 
-    } else if (entry->type == ClientTransactionTask::CacheEntry::REMOVE) {
-        // Read after remove; object would no longer exist.
-        objectFound = false;
-    } else if (entry->type == ClientTransactionTask::CacheEntry::READ
-            && entry->rejectRules.exists) {
-        // Read after read resulting in object DNE; object still DNE.
-        objectFound = false;
+    } else {
+        if (entry->type == ClientTransactionTask::CacheEntry::REMOVE) {
+            // Read after remove; object would no longer exist.
+            objectFound = false;
+
+            if (!requestBatched) {
+                optypestr = "txrdhitdne";
+            } else {
+                optypestr = "txbatchrdhitdne";
+            }
+        } else if (entry->type == ClientTransactionTask::CacheEntry::READ
+                && entry->rejectRules.exists) {
+            // Read after read resulting in object DNE; object still DNE.
+            objectFound = false;
+
+            if (!requestBatched) {
+                optypestr = "txrdhitdne";
+            } else {
+                optypestr = "txbatchrdhitdne";
+            }
+        } else {
+            if (!requestBatched) {
+                optypestr = "txrdhit";
+            } else {
+                optypestr = "txbatchrdhit";
+            }
+        }
     }
 
     if (objectExists == NULL) {
-        if (!objectFound)
+        if (!objectFound) {
+            uint64_t endTime = Cycles::rdtsc();
+
+            uint32_t dataLength = 0;
+
+            NANO_LOG(NOTICE, "{\"type\": \"%s_%s\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"keyLen\": %d, \"valLen\": %d, \"totalLen\": %d}", optypestr, objtypestr, Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), keyLength, dataLength, keyLength + dataLength);
+
             throw ObjectDoesntExistException(HERE);
+        }
     } else {
         *objectExists = objectFound;
-        if (!objectFound)
+        if (!objectFound) {
+            uint64_t endTime = Cycles::rdtsc();
+
+            uint32_t dataLength = 0;
+
+            NANO_LOG(NOTICE, "{\"type\": \"%s_%s\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"keyLen\": %d, \"valLen\": %d, \"totalLen\": %d}", optypestr, objtypestr, Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), keyLength, dataLength, keyLength + dataLength);
+
             return;
+        }
     }
 
     uint32_t dataLength;
     const void* data = entry->objectBuf.getValue(&dataLength);
     value->reset();
     value->appendCopy(data, dataLength);
+
+    uint64_t endTime = Cycles::rdtsc();
+
+    NANO_LOG(NOTICE, "{\"type\": \"%s_%s\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"keyLen\": %d, \"valLen\": %d, \"totalLen\": %d}", optypestr, objtypestr, Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), keyLength, dataLength, keyLength + dataLength);
 }
 
 } // namespace RAMCloud
