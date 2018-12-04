@@ -50,7 +50,7 @@ namespace po = boost::program_options;
 #include "btreeRamCloud/Btree.h"
 #include "ClientLeaseAgent.h"
 #include "IndexLookup.h"
-#include "TimeTrace.h"
+#include "../src/TimeTrace.h"
 #include "Transaction.h"
 #include "../src/Util.h"
 
