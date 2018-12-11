@@ -144,6 +144,20 @@ class ClientTransactionTask : public RpcTracker::TrackedRpc {
             return tableId < key.tableId ||
                 (tableId == key.tableId && keyHash < key.keyHash);
         }
+
+        bool operator==(const CacheKey& other) const
+        {
+            return ((tableId == other.tableId)
+                    && (keyHash == other.keyHash));
+        }
+
+        struct Hasher {
+            std::size_t operator()(const CacheKey& cacheKey) const {
+                std::size_t h1 = std::hash<uint64_t>()(cacheKey.tableId);
+                std::size_t h2 = std::hash<uint64_t>()(cacheKey.keyHash);
+                return h1 ^ (h2 << 1);
+            }
+        };
     };
 
     /**
@@ -151,7 +165,7 @@ class ClientTransactionTask : public RpcTracker::TrackedRpc {
      * be performed during commit and well as cache read and write values to
      * services subsequent reads.
      */
-    typedef std::multimap<CacheKey, CacheEntry> CommitCacheMap;
+    typedef std::unordered_multimap<CacheKey, CacheEntry, CacheKey::Hasher> CommitCacheMap;
     CommitCacheMap commitCache;
 
     /// Used to keep track of which cache entry to process next as part of the

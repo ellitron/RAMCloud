@@ -61,13 +61,15 @@ ClientTransactionTask::CacheEntry*
 ClientTransactionTask::findCacheEntry(Key& key)
 {
     CacheKey cacheKey = {key.getTableId(), key.getHash()};
-    CommitCacheMap::iterator it = commitCache.lower_bound(cacheKey);
+    //CommitCacheMap::iterator it = commitCache.lower_bound(cacheKey);
+    auto range = commitCache.equal_range(cacheKey);
     CacheEntry* entry = NULL;
 
-    while (it != commitCache.end()) {
-        if (cacheKey < it->first) {
-            break;
-        }
+    for (auto it = range.first; it != range.second; ++it) {
+//    while (it != commitCache.end()) {
+//        if (cacheKey < it->first) {
+//            break;
+//        }
 
         Key otherKey(it->first.tableId,
                      it->second.objectBuf.getKey(),
@@ -77,7 +79,7 @@ ClientTransactionTask::findCacheEntry(Key& key)
             break;
         }
 
-        it++;
+//        it++;
     }
     return entry;
 }
