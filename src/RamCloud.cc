@@ -1880,6 +1880,13 @@ RamCloud::multiRead(MultiReadObject* requests[], uint32_t numRequests)
     uint32_t totalValLen = 0;
     uint32_t totalDNE = 0;
     uint32_t totalOK = 0;
+
+    const char* key = (const char*)requests[0]->key;
+    short labelLen = *(const short*)(key+16);
+    char edgeLabel[labelLen+1];
+    edgeLabel[labelLen] = '\0';
+    memcpy(edgeLabel, key+18, labelLen);
+
     for (uint32_t i = 0; i < numRequests; i++) {
       totalKeyLen += requests[i]->keyLength;
       if (requests[i]->status == STATUS_OK) {
@@ -1891,7 +1898,8 @@ RamCloud::multiRead(MultiReadObject* requests[], uint32_t numRequests)
         totalDNE++;
       }
     }
-    NANO_LOG(NOTICE, "{\"type\": \"multiread_edgelist\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"numRequests\": %d, \"totalKeyLen\": %d, \"totalValLen\": %d, \"totalLen\": %d, \"totalOK\": %d, \"totalDNE\": %d}", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), numRequests, totalKeyLen, totalValLen, totalKeyLen + totalValLen, totalOK, totalDNE);
+
+    NANO_LOG(NOTICE, "{\"type\": \"multiread_edgelist\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"edgeLabel\": \"%s\", \"numRequests\": %d, \"totalKeyLen\": %d, \"totalValLen\": %d, \"totalLen\": %d, \"totalOK\": %d, \"totalDNE\": %d}", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), edgeLabel, numRequests, totalKeyLen, totalValLen, totalKeyLen + totalValLen, totalOK, totalDNE);
 }
 
 /**
