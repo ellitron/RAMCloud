@@ -1881,11 +1881,20 @@ RamCloud::multiRead(MultiReadObject* requests[], uint32_t numRequests)
     uint32_t totalDNE = 0;
     uint32_t totalOK = 0;
 
-    const char* key = (const char*)requests[0]->key;
-    short labelLen = *(const short*)(key+16);
-    char edgeLabel[labelLen+1];
-    edgeLabel[labelLen] = '\0';
-    memcpy(edgeLabel, key+18, labelLen);
+    char edgeLabel[64];
+    edgeLabel[0] = '\0';
+    char neighborLabel[64];
+    neighborLabel[0] = '\0';
+   
+    if (requests[0]->keyLength > 17) {
+      const char* key = (const char*)requests[0]->key;
+      short eLabelLen = *(const short*)(key+16);
+      memcpy(edgeLabel, key+18, eLabelLen);
+      edgeLabel[eLabelLen] = '\0';
+      short vLabelLen = *(const short*)(key + 16 + 2 + eLabelLen + 1);
+      memcpy(neighborLabel, key + 16 + 2 + eLabelLen + 1 + 2, vLabelLen);
+      neighborLabel[vLabelLen] = '\0';
+    }
 
     for (uint32_t i = 0; i < numRequests; i++) {
       totalKeyLen += requests[i]->keyLength;
@@ -1899,7 +1908,7 @@ RamCloud::multiRead(MultiReadObject* requests[], uint32_t numRequests)
       }
     }
 
-    NANO_LOG(NOTICE, "{\"type\": \"multiread_edgelist\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"edgeLabel\": \"%s\", \"numRequests\": %d, \"totalKeyLen\": %d, \"totalValLen\": %d, \"totalLen\": %d, \"totalOK\": %d, \"totalDNE\": %d}", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), edgeLabel, numRequests, totalKeyLen, totalValLen, totalKeyLen + totalValLen, totalOK, totalDNE);
+    NANO_LOG(NOTICE, "{\"type\": \"multiread_edgelist\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"edgeLabel\": \"%s\", \"neighborLabel\": \"%s\", \"numRequests\": %d, \"totalKeyLen\": %d, \"totalValLen\": %d, \"totalLen\": %d, \"totalOK\": %d, \"totalDNE\": %d}", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), edgeLabel, neighborLabel, numRequests, totalKeyLen, totalValLen, totalKeyLen + totalValLen, totalOK, totalDNE);
 }
 
 /**

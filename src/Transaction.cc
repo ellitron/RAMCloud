@@ -353,6 +353,8 @@ Transaction::ReadOp::wait(bool* objectExists)
     const char* objtypestr;
     char edgeLabel[64];
     edgeLabel[0] = '\0';
+    char neighborLabel[64];
+    neighborLabel[0] = '\0';
     if (keyLength == 17) {
       uint8_t rcobjtype = *(keyBuf.getOffset<uint8_t>(16));
       if (rcobjtype  == 0) {
@@ -364,9 +366,13 @@ Transaction::ReadOp::wait(bool* objectExists)
       }
     } else {
       objtypestr = "edgelist";
-      short labelLen = *(keyBuf.getOffset<short>(16));
-      memcpy(edgeLabel, keyBuf.getOffset<char>(18), labelLen);
-      edgeLabel[labelLen] = '\0'; 
+      short eLabelLen = *(keyBuf.getOffset<short>(16));
+      memcpy(edgeLabel, keyBuf.getOffset<char>(16 + 2), eLabelLen);
+      edgeLabel[eLabelLen] = '\0'; 
+
+      short vLabelLen = *(keyBuf.getOffset<short>(16 + 2 + eLabelLen + 1));
+      memcpy(neighborLabel, keyBuf.getOffset<char>(16 + 2 + eLabelLen + 1 + 2), vLabelLen);
+      neighborLabel[vLabelLen] = '\0'; 
     }
 
     // When we find out later, store the type of op this was.
@@ -474,7 +480,7 @@ Transaction::ReadOp::wait(bool* objectExists)
 
             uint32_t dataLength = 0;
 
-            NANO_LOG(NOTICE, "{\"type\": \"%s_%s\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"edgeLabel\": \"%s\", \"keyLen\": %d, \"valLen\": %d, \"totalLen\": %d}", optypestr, objtypestr, Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), edgeLabel, keyLength, dataLength, keyLength + dataLength);
+            NANO_LOG(NOTICE, "{\"type\": \"%s_%s\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"edgeLabel\": \"%s\", \"neighborLabel\": \"%s\", \"keyLen\": %d, \"valLen\": %d, \"totalLen\": %d}", optypestr, objtypestr, Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), edgeLabel, neighborLabel, keyLength, dataLength, keyLength + dataLength);
 
             throw ObjectDoesntExistException(HERE);
         }
@@ -485,7 +491,7 @@ Transaction::ReadOp::wait(bool* objectExists)
 
             uint32_t dataLength = 0;
 
-            NANO_LOG(NOTICE, "{\"type\": \"%s_%s\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"edgeLabel\": \"%s\", \"keyLen\": %d, \"valLen\": %d, \"totalLen\": %d}", optypestr, objtypestr, Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), edgeLabel, keyLength, dataLength, keyLength + dataLength);
+            NANO_LOG(NOTICE, "{\"type\": \"%s_%s\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"edgeLabel\": \"%s\", \"neighborLabel\": \"%s\", \"keyLen\": %d, \"valLen\": %d, \"totalLen\": %d}", optypestr, objtypestr, Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), edgeLabel, neighborLabel, keyLength, dataLength, keyLength + dataLength);
 
             return;
         }
@@ -498,7 +504,7 @@ Transaction::ReadOp::wait(bool* objectExists)
 
     uint64_t endTime = Cycles::rdtsc();
 
-    NANO_LOG(NOTICE, "{\"type\": \"%s_%s\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"edgeLabel\": \"%s\", \"keyLen\": %d, \"valLen\": %d, \"totalLen\": %d}", optypestr, objtypestr, Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), edgeLabel, keyLength, dataLength, keyLength + dataLength);
+    NANO_LOG(NOTICE, "{\"type\": \"%s_%s\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"edgeLabel\": \"%s\", \"neighborLabel\": \"%s\", \"keyLen\": %d, \"valLen\": %d, \"totalLen\": %d}", optypestr, objtypestr, Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), edgeLabel, neighborLabel, keyLength, dataLength, keyLength + dataLength);
 }
 
 } // namespace RAMCloud
