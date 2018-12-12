@@ -352,6 +352,7 @@ Transaction::ReadOp::wait(bool* objectExists)
     // Determine what type of object we are reading.
     const char* objtypestr;
     char edgeLabel[64];
+    edgeLabel[0] = '\0';
     if (keyLength == 17) {
       uint8_t rcobjtype = *(keyBuf.getOffset<uint8_t>(16));
       if (rcobjtype  == 0) {
