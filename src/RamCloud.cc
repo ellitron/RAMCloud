@@ -2819,6 +2819,14 @@ RamCloud::write(uint64_t tableId, const void* key, uint16_t keyLength,
 }
 
 /**
+ * Prints message using NANO_LOG.
+ */
+void 
+RamCloud::nanoLogPrint(char* msg) {
+    NANO_LOG(NOTICE, "%s", msg);
+}
+
+/**
  * Replace the value of a given object, or create a new object if none
  * previously existed.
  *

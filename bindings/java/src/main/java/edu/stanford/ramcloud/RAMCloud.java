@@ -19,6 +19,8 @@ import edu.stanford.ramcloud.multiop.*;
 
 import java.nio.*;
 
+import java.lang.*;
+
 /**
  * This class provides Java bindings for RAMCloud. Right now it is a rather
  * simple subset of what RamCloud.h defines.
@@ -344,6 +346,22 @@ public class RAMCloud {
     }
 
     /**
+     * Prints message using NANO_LOG.
+     */
+    public void nanoLogPrint(String msg) {
+        int msgLen = msg.length();
+        byte[] msgBytes = new byte[msgLen + 1];
+        System.arraycopy(msg.getBytes(), 0, msgBytes, 0, msgLen);
+        msgBytes[msgLen] = 0;
+        byteBuffer.rewind();
+        byteBuffer.putLong(ramcloudClusterHandle)
+                .putInt(msgBytes.length)
+                .put(msgBytes);
+        cppNanoLogPrint(cppByteBufferPointer);
+        byteBuffer.rewind();
+    }
+
+    /**
      * Replace the value of a given object, or create a new object if none
      * previously existed.
      *
@@ -604,6 +622,8 @@ public class RAMCloud {
     private static native void cppTimeTracePrintToLog();
 
     private static native void cppTimeTraceReset();
+
+    private static native void cppNanoLogPrint(long cppByteBufferPointer);
 
     private static native void cppWrite(long cppByteBufferPointer);
     

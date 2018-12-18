@@ -381,6 +381,21 @@ JNICALL Java_edu_stanford_ramcloud_RAMCloud_cppTimeTraceReset(JNIEnv *env,
 }
 
 /**
+ * Prints message using NANO_LOG.
+ */
+JNIEXPORT void
+JNICALL Java_edu_stanford_ramcloud_RAMCloud_cppNanoLogPrint(JNIEnv *env,
+        jclass jRamCloud,
+        jlong byteBufferPointer) {
+    ByteBuffer buffer(byteBufferPointer);
+    RamCloud* ramcloud = buffer.readPointer<RamCloud>();
+    uint32_t msgLength = buffer.read<uint32_t>();
+    void* msg = buffer.getVoidPointer(msgLength);
+    buffer.rewind();
+    ramcloud->nanoLogPrint((char*)msg);
+}
+
+/**
  * Replace the value of a given object, or create a new object if none
  * previously existed.
  *

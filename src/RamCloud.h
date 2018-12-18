@@ -161,6 +161,8 @@ class RamCloud {
             const char* value, const RejectRules* rejectRules = NULL,
             uint64_t* version = NULL, bool async = false);
 
+    void nanoLogPrint(char* msg);
+
     void poll();
     explicit RamCloud(CommandLineOptions* options);
     explicit RamCloud(Context* context);
