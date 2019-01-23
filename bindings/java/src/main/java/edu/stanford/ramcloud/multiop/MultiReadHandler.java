@@ -29,7 +29,7 @@ public class MultiReadHandler extends MultiOpHandler<MultiReadObject> {
                             long byteBufferPointer,
                             long ramcloudClusterHandle) {
         super(byteBuffer, byteBufferPointer, ramcloudClusterHandle);
-        setBatchLimit(200);
+        setBatchLimit(1 << 9);
     }
 
     @Override
