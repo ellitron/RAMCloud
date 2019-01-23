@@ -1881,12 +1881,14 @@ RamCloud::multiRead(MultiReadObject* requests[], uint32_t numRequests)
     uint32_t totalDNE = 0;
     uint32_t totalOK = 0;
 
+    char type[64];
     char edgeLabel[64];
     edgeLabel[0] = '\0';
     char neighborLabel[64];
     neighborLabel[0] = '\0';
    
     if (requests[0]->keyLength > 17) {
+      sprintf(type, "%s", "multiread_edgelist");
       const char* key = (const char*)requests[0]->key;
       short eLabelLen = *(const short*)(key+16);
       memcpy(edgeLabel, key+18, eLabelLen);
@@ -1894,6 +1896,8 @@ RamCloud::multiRead(MultiReadObject* requests[], uint32_t numRequests)
       short vLabelLen = *(const short*)(key + 16 + 2 + eLabelLen + 1);
       memcpy(neighborLabel, key + 16 + 2 + eLabelLen + 1 + 2, vLabelLen);
       neighborLabel[vLabelLen] = '\0';
+    } else {
+      sprintf(type, "%s", "multiread_properties");
     }
 
     for (uint32_t i = 0; i < numRequests; i++) {
@@ -1908,7 +1912,7 @@ RamCloud::multiRead(MultiReadObject* requests[], uint32_t numRequests)
       }
     }
 
-    NANO_LOG(NOTICE, "{\"type\": \"multiread_edgelist\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"edgeLabel\": \"%s\", \"neighborLabel\": \"%s\", \"numRequests\": %d, \"totalKeyLen\": %d, \"totalValLen\": %d, \"totalLen\": %d, \"totalOK\": %d, \"totalDNE\": %d}", Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), edgeLabel, neighborLabel, numRequests, totalKeyLen, totalValLen, totalKeyLen + totalValLen, totalOK, totalDNE);
+    NANO_LOG(NOTICE, "{\"type\": \"%s\", \"startTime\": %lu, \"endTime\": %lu, \"elapsedTime\": %lu, \"edgeLabel\": \"%s\", \"neighborLabel\": \"%s\", \"numRequests\": %d, \"totalKeyLen\": %d, \"totalValLen\": %d, \"totalLen\": %d, \"totalOK\": %d, \"totalDNE\": %d}", type, Cycles::toNanoseconds(startTime), Cycles::toNanoseconds(endTime), Cycles::toNanoseconds(endTime - startTime), edgeLabel, neighborLabel, numRequests, totalKeyLen, totalValLen, totalKeyLen + totalValLen, totalOK, totalDNE);
 }
 
 /**
