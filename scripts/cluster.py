@@ -410,7 +410,7 @@ class Cluster(object):
                 f.close()
 
 
-    def ensure_servers(self, numMasters=None, numBackups=None, timeout=30):
+    def ensure_servers(self, numMasters=None, numBackups=None, timeout=60):
         """Poll the coordinator and block until the specified number of
         masters and backups have enlisted. Useful for ensuring that the
         cluster is in the expected state before experiments begin.
