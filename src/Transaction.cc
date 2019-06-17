@@ -355,15 +355,8 @@ Transaction::ReadOp::wait(bool* objectExists)
     edgeLabel[0] = '\0';
     char neighborLabel[64];
     neighborLabel[0] = '\0';
-    if (keyLength == 17) {
-      uint8_t rcobjtype = *(keyBuf.getOffset<uint8_t>(16));
-      if (rcobjtype  == 0) {
-        objtypestr = "label";
-      } else if (rcobjtype  == 1) {
-        objtypestr = "properties";
-      } else {
-        objtypestr = "unknown";
-      }
+    if (keyLength == 16) {
+      objtypestr = "properties";
     } else {
       objtypestr = "edgelist";
       short eLabelLen = *(keyBuf.getOffset<short>(16));
