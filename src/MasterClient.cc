@@ -696,6 +696,7 @@ RecoverRpc::RecoverRpc(Context* context, ServerId serverId,
     reqHdr->numReplicas = numReplicas;
     request.append(replicas,
             downCast<uint32_t>(sizeof(replicas[0])) * numReplicas);
+
     send();
 }
 
@@ -1103,13 +1104,41 @@ TxHintFailedRpc::TxHintFailedRpc(
     : ObjectRpcWrapper(context, tableId, keyHash,
         sizeof(WireFormat::TxHintFailed::Response))
 {
-    WireFormat::TxHintFailed::Request* reqHdr(
-            allocHeader<WireFormat::TxHintFailed>());
-    reqHdr->leaseId = leaseId;
-    reqHdr->clientTxId = clientTransactionId;
-    reqHdr->participantCount = participantCount;
-    request.append(participants, sizeof32(WireFormat::TxParticipant)
-                                 * participantCount);
+    RAMCLOUD_LOG(NOTICE, "Sending TxHintFailedRpc for transaction <%lu,%lu> with participantCount %d", leaseId, clientTransactionId, participantCount);
+    WireFormat::TxParticipant* tp = participants;
+    for (uint32_t i = 0; i < participantCount; i++) {
+      if (tp->tableId != 1 && tp->tableId != 2) {
+        RAMCLOUD_LOG(NOTICE, "Found erroneous tableId in argument participant list to TxHintFailedRpc constructor at index %d for transaction <%lu,%lu>. tableId: %lu, keyHash: %lu, rpcId: %lu", i, leaseId, clientTransactionId, tp->tableId, tp->keyHash, tp->rpcId);
+      }
+      tp++;
+    }
+
+    {
+      WireFormat::TxHintFailed::Request* reqHdr(
+              allocHeader<WireFormat::TxHintFailed>());
+      reqHdr->leaseId = leaseId;
+      reqHdr->clientTxId = clientTransactionId;
+      reqHdr->participantCount = participantCount;
+      request.appendCopy(participants, sizeof32(WireFormat::TxParticipant)
+                                   * participantCount);
+    }
+
+    WireFormat::TxHintFailed::Request* reqHdr =
+            request.getStart<WireFormat::TxHintFailed::Request>();
+    
+    RAMCLOUD_LOG(NOTICE, "Parsed my own TxHintFailedRpc for transaction <%lu,%lu> with participantCount %d, and found txId <%lu,%lu> with participantCount %d", leaseId, clientTransactionId, participantCount, reqHdr->leaseId, reqHdr->clientTxId, reqHdr->participantCount);
+
+    uint32_t offset = sizeof32(*reqHdr);
+    uint32_t i = 0;
+    while (offset < request.size()) {
+      tp = request.getOffset<WireFormat::TxParticipant>(offset);
+      if (tp->tableId != 1 && tp->tableId != 2) {
+        RAMCLOUD_LOG(NOTICE, "Found erroneous tableId in TxHintFailedRpc participant list at index %d for transaction <%lu,%lu>. tableId: %lu, keyHash: %lu, rpcId: %lu", i, leaseId, clientTransactionId, tp->tableId, tp->keyHash, tp->rpcId);
+      }
+      offset += sizeof32(*tp);   
+      i++;
+    }
+
     send();
 }
 

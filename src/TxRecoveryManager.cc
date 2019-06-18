@@ -115,10 +115,24 @@ TxRecoveryManager::handleTxHintFailed(Buffer* rpcReq)
         return;
     }
 
+    RAMCLOUD_LOG(NOTICE, "Recovery manager handling TxHintFailedRpc for transaction <%lu,%lu> with participantCount %d", leaseId, txId, participantCount);
+
+    uint32_t i = 0;
+    uint32_t off = sizeof32(*reqHdr);
+    while (off < rpcReq->size()) {
+      WireFormat::TxParticipant* tp = rpcReq->getOffset<WireFormat::TxParticipant>(off);
+      if (tp->tableId != 1 && tp->tableId != 2) {
+        RAMCLOUD_LOG(NOTICE, "Recovery manager found erroneous tableId in TxHintFailedRpc participant list at index %d for transaction <%lu,%lu>. tableId: %lu, keyHash: %lu, rpcId: %lu", i, leaseId, txId, tp->tableId, tp->keyHash, tp->rpcId);
+      }
+      off += sizeof32(*tp);   
+      i++;
+    }
+
     /*** Schedule a new recovery. ***/
     recoveringIds.insert(recoveryId);
     recoveries.emplace_back(
             context, leaseId, txId, *rpcReq, participantCount, offset);
+
     this->start(0);
 }
 

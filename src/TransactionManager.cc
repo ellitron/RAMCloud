@@ -119,6 +119,15 @@ TransactionManager::registerTransaction(ParticipantList& participantList,
 
     TransactionId txId = participantList.getTransactionId();
     TransactionRecord* transaction = getOrAddTransaction(txId, lock);
+    
+    RAMCLOUD_LOG(NOTICE, "Registering transaction <%lu,%lu> with participantCount %d (uncleaned transaction count: %lu)", txId.clientLeaseId, txId.clientTransactionId, participantList.getParticipantCount(), transactionIds.size());
+    WireFormat::TxParticipant* tp = participantList.participants;
+    for (uint32_t i = 0; i < participantList.getParticipantCount(); i++) {
+      if (tp->tableId != 1 && tp->tableId != 2) {
+        RAMCLOUD_LOG(NOTICE, "Found erroneous tableId in participant list to at index %d when registering transaction <%lu,%lu>. tableId: %lu, keyHash: %lu, rpcId: %lu", i, txId.clientLeaseId, txId.clientTransactionId, tp->tableId, tp->keyHash, tp->rpcId);
+      }
+      tp++;
+    }
 
     if (transaction->participantListLogRef == AbstractLog::Reference()) {
         // Write the ParticipantList into the Log, update the table.
@@ -555,6 +564,36 @@ TransactionManager::TransactionRecord::handleTimerEvent()
     // during this call so delaying this method would prevent other transactions
     // from being processed.
     TransactionManager::Lock lock(transactionManager->mutex);
+   
+    { 
+      TabletManager::Protector protector(transactionManager->tabletManager);
+      if (preparedOpCount <= 0) {
+          // Acknowledged with no outstanding operations
+          if (transactionManager->unackedRpcResults->isRpcAcked(
+                  txId.clientLeaseId, txId.clientTransactionId)) {
+              RAMCLOUD_LOG(NOTICE, "TxID <%lu,%lu> has completed; Acked by Client.",
+                       txId.clientLeaseId, txId.clientTransactionId);
+          }
+          // Recovered with no outstanding operations
+          if (recovered) {
+              RAMCLOUD_LOG(NOTICE, "TxID <%lu,%lu> has completed; Recovered with all prepared"
+                       " operations decided.",
+                       txId.clientLeaseId, txId.clientTransactionId);
+          }
+          // No participant list, must not have been registered.
+          if (participantListLogRef == AbstractLog::Reference()) {
+              RAMCLOUD_LOG(NOTICE, "TxID <%lu,%lu> has no participant list; must not have"
+                       "registered.",
+                       txId.clientLeaseId, txId.clientTransactionId);
+          }
+          // No longer a participant.
+          if (!checkMasterParticipantion(lock, protector)) {
+              RAMCLOUD_LOG(NOTICE, "TxID <%lu,%lu> does not belong to this master.",
+                      txId.clientLeaseId, txId.clientTransactionId);
+          }
+      } else 
+        RAMCLOUD_LOG(NOTICE, "TxId <%lu,%lu> is already finished!", txId.clientLeaseId, txId.clientTransactionId);
+    }
 
     // Construct and send the txHintFailedRpc if it has not been done.
     if (!txHintFailedRpc) {
@@ -576,9 +615,9 @@ TransactionManager::TransactionRecord::handleTimerEvent()
         ParticipantList participantList(pListBuf);
         assert(txId == participantList.getTransactionId());
 
-        TEST_LOG("TxID <%lu,%lu> sending TxHintFailed RPC to owner of tableId "
+        RAMCLOUD_LOG(WARNING, "TxID <%lu,%lu> with participantCount %d sending TxHintFailed RPC to owner of tableId "
                 "%lu and keyHash %lu.",
-                txId.clientLeaseId, txId.clientTransactionId,
+                txId.clientLeaseId, txId.clientTransactionId, participantList.getParticipantCount(),
                 participantList.getTableId(), participantList.getKeyHash());
 
         txHintFailedRpc.construct(transactionManager->context,
@@ -715,15 +754,20 @@ TransactionManager::TransactionRegistryCleaner::handleTimerEvent()
     {
         TransactionManager::Lock lock(transactionManager->mutex);
         it = transactionManager->transactionIds.begin();
+        
+//      RAMCLOUD_LOG(NOTICE, "Cleaner starting (uncleaned transaction count: %lu)", transactionManager->transactionIds.size());
     }
+
 
     while (true) {
         TransactionManager::Lock lock(transactionManager->mutex);
         TabletManager::Protector protector(transactionManager->tabletManager);
 
         // There are recoveries or migrations in progress; don't clean.
-        if (protector.notReadyTabletExists())
+        if (protector.notReadyTabletExists()) {
+            RAMCLOUD_LOG(NOTICE, "Aborting early.");
             break;
+        }
         // Cleaning pass completed.
         if (it == transactionManager->transactionIds.end())
             break;
@@ -737,7 +781,8 @@ TransactionManager::TransactionRegistryCleaner::handleTimerEvent()
                     transaction->txId.clientLeaseId,
                     transaction->txId.clientTransactionId);
             ++it;
-        } else if (!transaction->inProgress(lock, protector)) {;
+        } else if (!transaction->inProgress(lock, protector)) {
+            RAMCLOUD_LOG(NOTICE, "Transaction registry cleaner is cleaning TxId <%lu,%lu> (uncleaned transaction count: %lu)", txId.clientLeaseId, txId.clientTransactionId, transactionManager->transactionIds.size());
             transactionManager->transactions.erase(txId);
             delete transaction;
             it = transactionManager->transactionIds.erase(it);
@@ -750,6 +795,7 @@ TransactionManager::TransactionRegistryCleaner::handleTimerEvent()
         TransactionManager::Lock lock(transactionManager->mutex);
         // Keep cleaning if there are still incomplete transactions.
         if (transactionManager->transactionIds.size() > 0) {
+            RAMCLOUD_LOG(NOTICE, "Restarting timer.");
             transactionManager->cleaner.start(0);
         }
     }
