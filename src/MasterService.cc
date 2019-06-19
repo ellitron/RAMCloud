@@ -2875,18 +2875,27 @@ MasterService::txPrepare(const WireFormat::TxPrepare::Request* reqHdr,
     // before this transaction prepare request is processed.
     TransactionManager::Protector protectTransaction(&transactionManager, txId);
 
-    if (transactionManager.registerTransaction(participantList,
+    // 2. Process operations.
+    uint32_t numRequests = reqHdr->opCount;
+    uint32_t numReadOnly = 0;
+
+    assert(numRequests > 0);
+
+    const WireFormat::TxPrepare::OpType *type =
+            rpc->requestPayload->getOffset<
+            WireFormat::TxPrepare::OpType>(reqOffset);
+    
+    if ((*type != WireFormat::TxPrepare::READONLY) && 
+        (transactionManager.registerTransaction(participantList,
                                                assembledParticpantList,
                                                objectManager.getLog())
-            != STATUS_OK) {
+            != STATUS_OK)) {
         respHdr->common.status = STATUS_RETRY;
         rpc->sendReply();
         return;
     }
 
-    // 2. Process operations.
-    uint32_t numRequests = reqHdr->opCount;
-    uint32_t numReadOnly = 0;
+    RAMCLOUD_LOG(NOTICE, "MasterService::txPrepare(): txId: <%lu,%lu>, current Ack Id: %d", txId.clientLeaseId, txId.clientTransactionId, unackedRpcResults.getAckedId(txId.clientLeaseId));
 
     clusterClock.updateClock(ClusterTime(reqHdr->lease.timestamp));
 
@@ -3028,6 +3037,9 @@ MasterService::txPrepare(const WireFormat::TxPrepare::Request* reqHdr,
                 break;
             }
             respHdr->vote = WireFormat::TxPrepare::PREPARED;
+
+//            RAMCLOUD_LOG(NOTICE, "", );
+
             continue;
         } else {
             respHdr->common.status = STATUS_REQUEST_FORMAT_ERROR;
@@ -3128,6 +3140,7 @@ MasterService::txPrepare(const WireFormat::TxPrepare::Request* reqHdr,
             transactionManager.removeOp(reqHdr->lease.leaseId,
                                         participants[i].rpcId);
         }
+        RAMCLOUD_LOG(NOTICE, "MasterService::txPrepare() (optimized commit): txId: <%lu,%lu>, participantCount: %d", txId.clientLeaseId, txId.clientTransactionId, participantCount);
         respHdr->vote = WireFormat::TxPrepare::COMMITTED;
     }
 

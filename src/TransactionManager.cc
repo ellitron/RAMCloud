@@ -120,15 +120,6 @@ TransactionManager::registerTransaction(ParticipantList& participantList,
     TransactionId txId = participantList.getTransactionId();
     TransactionRecord* transaction = getOrAddTransaction(txId, lock);
     
-    RAMCLOUD_LOG(NOTICE, "Registering transaction <%lu,%lu> with participantCount %d (uncleaned transaction count: %lu)", txId.clientLeaseId, txId.clientTransactionId, participantList.getParticipantCount(), transactionIds.size());
-    WireFormat::TxParticipant* tp = participantList.participants;
-    for (uint32_t i = 0; i < participantList.getParticipantCount(); i++) {
-      if (tp->tableId != 1 && tp->tableId != 2) {
-        RAMCLOUD_LOG(NOTICE, "Found erroneous tableId in participant list to at index %d when registering transaction <%lu,%lu>. tableId: %lu, keyHash: %lu, rpcId: %lu", i, txId.clientLeaseId, txId.clientTransactionId, tp->tableId, tp->keyHash, tp->rpcId);
-      }
-      tp++;
-    }
-
     if (transaction->participantListLogRef == AbstractLog::Reference()) {
         // Write the ParticipantList into the Log, update the table.
         if (!log->append(LOG_ENTRY_TYPE_TXPLIST,
@@ -138,6 +129,15 @@ TransactionManager::registerTransaction(ParticipantList& participantList,
             // The log is out of space. Tell the client to retry and hope
             // that the cleaner makes space soon.
             return STATUS_RETRY;
+        }
+
+        RAMCLOUD_LOG(NOTICE, "Registering transaction <%lu,%lu> with participantCount %d (uncleaned transaction count: %lu)", txId.clientLeaseId, txId.clientTransactionId, participantList.getParticipantCount(), transactionIds.size());
+        WireFormat::TxParticipant* tp = participantList.participants;
+        for (uint32_t i = 0; i < participantList.getParticipantCount(); i++) {
+          if (tp->tableId != 1 && tp->tableId != 2) {
+            RAMCLOUD_LOG(NOTICE, "Found erroneous tableId in participant list to at index %d when registering transaction <%lu,%lu>. tableId: %lu, keyHash: %lu, rpcId: %lu", i, txId.clientLeaseId, txId.clientTransactionId, tp->tableId, tp->keyHash, tp->rpcId);
+          }
+          tp++;
         }
 
         // Participant List records are not accounted for in the table stats.
@@ -573,26 +573,23 @@ TransactionManager::TransactionRecord::handleTimerEvent()
                   txId.clientLeaseId, txId.clientTransactionId)) {
               RAMCLOUD_LOG(NOTICE, "TxID <%lu,%lu> has completed; Acked by Client.",
                        txId.clientLeaseId, txId.clientTransactionId);
+          } else if (recovered) {
+                RAMCLOUD_LOG(NOTICE, "TxID <%lu,%lu> has completed; Recovered with all prepared"
+                         " operations decided.",
+                         txId.clientLeaseId, txId.clientTransactionId);
+          } else if (participantListLogRef == AbstractLog::Reference()) {
+                RAMCLOUD_LOG(NOTICE, "TxID <%lu,%lu> has no participant list; must not have"
+                         "registered.",
+                         txId.clientLeaseId, txId.clientTransactionId);
+          } else if (!checkMasterParticipantion(lock, protector)) {
+                RAMCLOUD_LOG(NOTICE, "TxID <%lu,%lu> does not belong to this master.",
+                        txId.clientLeaseId, txId.clientTransactionId);
+          } else {
+            RAMCLOUD_LOG(NOTICE, "TxId <%lu,%lu> is not finished but preparedOpCount <= 0 (%d)!", txId.clientLeaseId, txId.clientTransactionId, preparedOpCount);
           }
-          // Recovered with no outstanding operations
-          if (recovered) {
-              RAMCLOUD_LOG(NOTICE, "TxID <%lu,%lu> has completed; Recovered with all prepared"
-                       " operations decided.",
-                       txId.clientLeaseId, txId.clientTransactionId);
-          }
-          // No participant list, must not have been registered.
-          if (participantListLogRef == AbstractLog::Reference()) {
-              RAMCLOUD_LOG(NOTICE, "TxID <%lu,%lu> has no participant list; must not have"
-                       "registered.",
-                       txId.clientLeaseId, txId.clientTransactionId);
-          }
-          // No longer a participant.
-          if (!checkMasterParticipantion(lock, protector)) {
-              RAMCLOUD_LOG(NOTICE, "TxID <%lu,%lu> does not belong to this master.",
-                      txId.clientLeaseId, txId.clientTransactionId);
-          }
-      } else 
-        RAMCLOUD_LOG(NOTICE, "TxId <%lu,%lu> is already finished!", txId.clientLeaseId, txId.clientTransactionId);
+      } else {
+        RAMCLOUD_LOG(NOTICE, "TxId <%lu,%lu> is not finished! preparedOpCount: %d", txId.clientLeaseId, txId.clientTransactionId, preparedOpCount);
+      }
     }
 
     // Construct and send the txHintFailedRpc if it has not been done.
@@ -795,7 +792,7 @@ TransactionManager::TransactionRegistryCleaner::handleTimerEvent()
         TransactionManager::Lock lock(transactionManager->mutex);
         // Keep cleaning if there are still incomplete transactions.
         if (transactionManager->transactionIds.size() > 0) {
-            RAMCLOUD_LOG(NOTICE, "Restarting timer.");
+//          RAMCLOUD_LOG(NOTICE, "Restarting timer.");
             transactionManager->cleaner.start(0);
         }
     }

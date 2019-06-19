@@ -472,6 +472,18 @@ UnackedRpcResults::isRpcAcked(uint64_t clientId, uint64_t rpcId)
     }
 }
 
+bool
+UnackedRpcResults::getAckedId(uint64_t clientId)
+{
+    Lock lock(mutex);
+    Client* client = getClientRecord(clientId, lock);
+    if (client == NULL) {
+        return 0;
+    } else {
+        return client->maxAckId;
+    }
+}
+
 /**
  * Construct to prevent a specific client's record from being removed.
  *

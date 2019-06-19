@@ -62,6 +62,7 @@ class UnackedRpcResults {
     void resetRecord(uint64_t clientId,
                      uint64_t rpcId);
     bool isRpcAcked(uint64_t clientId, uint64_t rpcId);
+    bool getAckedId(uint64_t clientId);
 
     /**
      * This class is used to prevent RPC Result records for a specified client
