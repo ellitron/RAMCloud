@@ -2874,19 +2874,26 @@ MasterService::txPrepare(const WireFormat::TxPrepare::Request* reqHdr,
     // Ensure the soon to be registered transaction is not garbage collected
     // before this transaction prepare request is processed.
     TransactionManager::Protector protectTransaction(&transactionManager, txId);
+    
+    // 2. Process operations.
+    uint32_t numRequests = reqHdr->opCount;
+    uint32_t numReadOnly = 0;
 
-    if (transactionManager.registerTransaction(participantList,
+    assert(numRequests > 0);
+
+    const WireFormat::TxPrepare::OpType *type =
+            rpc->requestPayload->getOffset<
+            WireFormat::TxPrepare::OpType>(reqOffset);
+
+    if ((*type != WireFormat::TxPrepare::READONLY) && 
+        (transactionManager.registerTransaction(participantList,
                                                assembledParticpantList,
                                                objectManager.getLog())
-            != STATUS_OK) {
+            != STATUS_OK)) {
         respHdr->common.status = STATUS_RETRY;
         rpc->sendReply();
         return;
     }
-
-    // 2. Process operations.
-    uint32_t numRequests = reqHdr->opCount;
-    uint32_t numReadOnly = 0;
 
     clusterClock.updateClock(ClusterTime(reqHdr->lease.timestamp));
 
