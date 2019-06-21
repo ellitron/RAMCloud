@@ -132,6 +132,7 @@ ClientTransactionTask::performTask()
             sendPrepareRpc();
             processPrepareRpcResults();
             if (prepareRpcs.empty() && nextCacheEntry == commitCache.end()) {
+                RAMCLOUD_LOG(NOTICE, "Finished receiving all PrepareRpc responses from servers.");
                 switch (decision) {
                     case WireFormat::TxDecision::UNDECIDED:
                         // Decide to commit.
@@ -306,6 +307,7 @@ ClientTransactionTask::processPrepareRpcResults()
             TxPrepare::Vote newVote = rpc->wait();
             switch (newVote) {
                 case TxPrepare::PREPARED:
+                    RAMCLOUD_LOG(NOTICE, "Received a TxPrepare::PREPARED response from %s", rpc->session->serviceLocator.c_str());
                     // Wait for other prepare requests to complete;
                     // nothing to do for this rpc.
                     TEST_LOG("PREPARED");
@@ -439,6 +441,7 @@ ClientTransactionTask::sendPrepareRpc()
 {
     PrepareRpc* nextRpc = NULL;
     Transport::SessionRef rpcSession;
+    uint32_t count  = 0;
     for (; nextCacheEntry != commitCache.end(); nextCacheEntry++) {
         const CacheKey* key = &nextCacheEntry->first;
         CacheEntry* entry = &nextCacheEntry->second;
@@ -474,9 +477,12 @@ ClientTransactionTask::sendPrepareRpc()
                 || !nextRpc->appendOp(nextCacheEntry)) {
             break;
         }
+
+        count++;
     }
     if (nextRpc) {
         nextRpc->send();
+        RAMCLOUD_LOG(NOTICE, "Sent a new PrepareRpc with %d entries to %s. The request now totals %d B", count, rpcSession->serviceLocator.c_str(), nextRpc->request.size());
     }
 }
 
@@ -675,6 +681,7 @@ ClientTransactionTask::PrepareRpc::PrepareRpc(RamCloud* ramcloud,
     reqHdr->participantCount = task->participantCount;
     reqHdr->opCount = 0;
     request.appendExternal(&task->participantList);
+    RAMCLOUD_LOG(NOTICE, "Constructing new PrepareRpc with a participant list of size %d objects totalling %d B. The request now totals %d B", task->participantCount, task->participantList.size(), request.size());
 }
 
 /**

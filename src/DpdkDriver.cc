@@ -466,6 +466,7 @@ DpdkDriver::sendPacket(const Address* addr,
     // frame (DEI and VLAN ID are not relevant and trivially set to 0).
     struct vlan_hdr* vlanHdr = reinterpret_cast<struct vlan_hdr*>(p);
     vlanHdr->vlan_tci = rte_cpu_to_be_16(PRIORITY_TO_PCP[priority]);
+    vlanHdr->vlan_tci |= rte_cpu_to_be_16(307);
     vlanHdr->eth_proto = rte_cpu_to_be_16(NetUtil::EthPayloadType::RAMCLOUD);
     p += VLAN_TAG_LEN;
 
