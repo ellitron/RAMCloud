@@ -237,11 +237,16 @@ ClientTransactionTask::initTask()
         CacheEntry* entry = &nextCacheEntry->second;
 
         entry->rpcId = txId + (++i);
-        participantList.emplaceAppend<WireFormat::TxParticipant>(
-                key->tableId,
-                static_cast<uint64_t>(key->keyHash),
-                entry->rpcId);
-        participantCount++;
+       
+        // Don't construct the participant list for readOnly transactions. 
+        if (!readOnly) {
+            participantList.emplaceAppend<WireFormat::TxParticipant>(
+                    key->tableId,
+                    static_cast<uint64_t>(key->keyHash),
+                    entry->rpcId);
+            participantCount++;
+        }
+
         nextCacheEntry++;
     }
     assert(i == commitCache.size());

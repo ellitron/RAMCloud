@@ -2847,6 +2847,8 @@ MasterService::txPrepare(const WireFormat::TxPrepare::Request* reqHdr,
         WireFormat::TxPrepare::Response* respHdr,
         Rpc* rpc)
 {
+    TransactionId txId(reqHdr->lease.leaseId, reqHdr->clientTxId);
+
     uint32_t reqOffset = sizeof32(*reqHdr);
 
     // 1. Process participant list.
@@ -2857,43 +2859,43 @@ MasterService::txPrepare(const WireFormat::TxPrepare::Request* reqHdr,
 
     reqOffset += sizeof32(WireFormat::TxParticipant) * participantCount;
 
-    if (participantCount == 0 || participants == NULL) {
-        respHdr->common.status = STATUS_REQUEST_FORMAT_ERROR;
-        rpc->sendReply();
-        return;
-    }
-
-    ParticipantList participantList(participants,
-                                    participantCount,
-                                    reqHdr->lease.leaseId,
-                                    reqHdr->clientTxId);
-    TransactionId txId = participantList.getTransactionId();
-    Buffer assembledParticpantList;
-    participantList.assembleForLog(assembledParticpantList);
-
     // Ensure the soon to be registered transaction is not garbage collected
     // before this transaction prepare request is processed.
     TransactionManager::Protector protectTransaction(&transactionManager, txId);
     
+    const WireFormat::TxPrepare::OpType *type =
+            rpc->requestPayload->getOffset<
+            WireFormat::TxPrepare::OpType>(reqOffset);
+
+    if (*type != WireFormat::TxPrepare::READONLY) {
+        if (participantCount == 0 || participants == NULL) {
+            respHdr->common.status = STATUS_REQUEST_FORMAT_ERROR;
+            rpc->sendReply();
+            return;
+        }
+
+        ParticipantList participantList(participants,
+                                        participantCount,
+                                        reqHdr->lease.leaseId,
+                                        reqHdr->clientTxId);
+        Buffer assembledParticpantList;
+        participantList.assembleForLog(assembledParticpantList);
+
+        if (transactionManager.registerTransaction(participantList,
+                                               assembledParticpantList,
+                                               objectManager.getLog())
+                != STATUS_OK) {
+            respHdr->common.status = STATUS_RETRY;
+            rpc->sendReply();
+            return;
+        }
+    }
+
     // 2. Process operations.
     uint32_t numRequests = reqHdr->opCount;
     uint32_t numReadOnly = 0;
 
     assert(numRequests > 0);
-
-    const WireFormat::TxPrepare::OpType *type =
-            rpc->requestPayload->getOffset<
-            WireFormat::TxPrepare::OpType>(reqOffset);
-
-    if ((*type != WireFormat::TxPrepare::READONLY) && 
-        (transactionManager.registerTransaction(participantList,
-                                               assembledParticpantList,
-                                               objectManager.getLog())
-            != STATUS_OK)) {
-        respHdr->common.status = STATUS_RETRY;
-        rpc->sendReply();
-        return;
-    }
 
     clusterClock.updateClock(ClusterTime(reqHdr->lease.timestamp));
 
