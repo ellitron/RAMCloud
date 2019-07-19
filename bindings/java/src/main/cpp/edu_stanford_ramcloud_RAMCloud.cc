@@ -301,13 +301,15 @@ JNICALL Java_edu_stanford_ramcloud_RAMCloud_cppRead(
 #if TIME_CPP
     uint64_t start = Cycles::rdtsc();
 #endif
+    bool exists;
     try {
         ramcloud->read(tableId,
                        key,
                        keyLength,
                        &buffer,
                        &rejectRules,
-                       &version);
+                       &version,
+                       &exists);
     } EXCEPTION_CATCHER(byteBuffer);
 #if TIME_CPP
     test_times[test_num_current] = Cycles::rdtsc() - start;
@@ -318,6 +320,12 @@ JNICALL Java_edu_stanford_ramcloud_RAMCloud_cppRead(
         test_num_current = 0;
     }
 #endif
+    
+    if(exists == true)
+        byteBuffer.write<uint32_t>(1);
+    else
+        byteBuffer.write<uint32_t>(0);
+
     byteBuffer.write(version);
     byteBuffer.write(buffer.size());
     buffer.copy(0, buffer.size(), byteBuffer.getVoidPointer());

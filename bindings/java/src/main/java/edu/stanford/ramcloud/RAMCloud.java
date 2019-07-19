@@ -266,6 +266,13 @@ public class RAMCloud {
         cppRead(cppByteBufferPointer);
         byteBuffer.rewind();
         ClientException.checkStatus(byteBuffer.getInt());
+        
+        boolean exists = (byteBuffer.getInt() == 1);
+
+        if (!exists) {
+          return null;
+        }
+
         long version = byteBuffer.getLong();
         int valueLength = byteBuffer.getInt();
         byte[] value = new byte[valueLength];
